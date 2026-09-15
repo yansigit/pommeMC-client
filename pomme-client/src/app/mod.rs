@@ -49,6 +49,7 @@ pub struct App {
     fps_limiter: FramerateLimiter,
     capture_first_frame: bool,
     capture_gameplay_frame: bool,
+    gameplay_capture_in_flight: bool,
     gameplay_capture_wait_frames: u8,
     restore_cursor_after_screenshot: bool,
     #[cfg(feature = "singleplayer")]
@@ -141,6 +142,7 @@ impl App {
             fps_limiter: FramerateLimiter::new(),
             capture_first_frame,
             capture_gameplay_frame,
+            gameplay_capture_in_flight: capture_gameplay_frame,
             gameplay_capture_wait_frames: if showcase_copper_golem_statues { 60 } else { 0 },
             restore_cursor_after_screenshot: false,
             #[cfg(feature = "singleplayer")]
@@ -605,7 +607,11 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::Focused(focused) => {
-                self.core.unfocused_since = (!focused).then(Instant::now);
+                // A noninteractive gameplay capture can launch without ever
+                // receiving OS focus. Do not let vanilla's pause-on-focus-loss
+                // behavior cover the requested world frame with the pause menu.
+                self.core.unfocused_since =
+                    (!focused && !self.gameplay_capture_in_flight).then(Instant::now);
             }
 
             WindowEvent::RedrawRequested => {
@@ -806,6 +812,7 @@ impl ApplicationHandler for App {
                     .gfx_mut()
                     .is_some_and(|gfx| gfx.renderer.screenshot_completed());
                 if screenshot_completed {
+                    self.gameplay_capture_in_flight = false;
                     if self.exit_after_screenshot {
                         event_loop.exit();
                     } else if self.restore_cursor_after_screenshot
