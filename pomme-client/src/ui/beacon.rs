@@ -171,6 +171,9 @@ pub fn build_beacon(
     }
 }
 
+#[allow(dead_code)]
+const _: ([f32; 4], f32) = (rgb(0xFFFFFF), SLOT_STRIDE);
+
 #[cfg(test)]
 mod tests {
     use super::{PRIMARY_EFFECTS, SECONDARY_EFFECTS};
@@ -182,6 +185,3 @@ mod tests {
         assert_eq!(SECONDARY_EFFECTS[0].1, 1);
     }
 }
-
-#[allow(dead_code)]
-const _: ([f32; 4], f32) = (rgb(0xFFFFFF), SLOT_STRIDE);

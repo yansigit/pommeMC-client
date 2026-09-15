@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 // Single source of truth for the vertex packing constants, shared with the
 // shaders via the generated packing.glsl.
@@ -9,7 +9,31 @@ fn main() {
     // Releases bundle the Vulkan loader (libvulkan.1.dylib) next to the binary,
     // since macOS has no system Vulkan; this rpath lets it be found at runtime.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        println!("cargo:rerun-if-env-changed=VULKAN_SDK");
         println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path");
+
+        // ash's linked loader needs vkGetInstanceProcAddr at link time. The
+        // release workflow supplies the LunarG SDK, while local macOS builds
+        // commonly use Homebrew's vulkan-loader package.
+        let sdk_lib = std::env::var_os("VULKAN_SDK")
+            .map(PathBuf::from)
+            .map(|path| path.join("lib"));
+        let loader_dir = sdk_lib
+            .into_iter()
+            .chain([
+                PathBuf::from("/opt/homebrew/lib"),
+                PathBuf::from("/usr/local/lib"),
+            ])
+            .find(|path| path.join("libvulkan.dylib").is_file());
+
+        if let Some(path) = loader_dir {
+            println!("cargo:rustc-link-search=native={}", path.display());
+            println!("cargo:rustc-link-lib=dylib=vulkan");
+        } else {
+            println!(
+                "cargo:warning=Vulkan loader not found; install the Vulkan SDK or Homebrew vulkan-loader"
+            );
+        }
     }
 
     let shader_dir = Path::new("src/renderer/shaders");

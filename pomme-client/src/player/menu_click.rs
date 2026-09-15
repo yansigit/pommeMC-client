@@ -661,51 +661,6 @@ fn quick_move(kind: ContainerKind, menu: &mut Menu, s: usize) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::ContainerKind;
-
-    #[test]
-    fn hopper_uses_five_slots_before_player_inventory() {
-        assert_eq!(ContainerKind::Hopper.slot_count(), 41);
-        assert_eq!(ContainerKind::Hopper.inv_start(), 5);
-        assert_eq!(ContainerKind::Hopper.hotbar_menu_slot(0), 32);
-        assert_eq!(ContainerKind::Hopper.hotbar_menu_slot(8), 40);
-    }
-
-    #[test]
-    fn generic_three_by_three_uses_nine_slots_before_player_inventory() {
-        assert_eq!(ContainerKind::Generic3x3.slot_count(), 45);
-        assert_eq!(ContainerKind::Generic3x3.inv_start(), 9);
-        assert_eq!(ContainerKind::Generic3x3.hotbar_menu_slot(0), 36);
-        assert_eq!(ContainerKind::Generic3x3.hotbar_menu_slot(8), 44);
-    }
-
-    #[test]
-    fn brewing_uses_three_bottles_ingredient_and_fuel() {
-        assert_eq!(ContainerKind::Brewing.slot_count(), 41);
-        assert_eq!(ContainerKind::Brewing.inv_start(), 5);
-        assert_eq!(ContainerKind::Brewing.hotbar_menu_slot(0), 32);
-        assert_eq!(ContainerKind::Brewing.hotbar_menu_slot(8), 40);
-    }
-
-    #[test]
-    fn beacon_uses_one_payment_slot_before_player_inventory() {
-        assert_eq!(ContainerKind::Beacon.slot_count(), 37);
-        assert_eq!(ContainerKind::Beacon.inv_start(), 1);
-        assert_eq!(ContainerKind::Beacon.hotbar_menu_slot(0), 28);
-        assert_eq!(ContainerKind::Beacon.hotbar_menu_slot(8), 36);
-    }
-
-    #[test]
-    fn merchant_uses_two_payment_slots_and_one_result_before_inventory() {
-        assert_eq!(ContainerKind::Merchant.slot_count(), 39);
-        assert_eq!(ContainerKind::Merchant.inv_start(), 3);
-        assert_eq!(ContainerKind::Merchant.hotbar_menu_slot(0), 30);
-        assert_eq!(ContainerKind::Merchant.hotbar_menu_slot(8), 38);
-    }
-}
-
 /// Vanilla `AbstractContainerMenu.moveItemStackTo`: first merge into matching
 /// stacks across `range` (back to front when `reverse`), then place the
 /// remainder into the first empty slot that accepts it.
@@ -835,5 +790,50 @@ fn with_count(mut data: ItemStackData, count: i32) -> ItemStack {
         ItemStack::Present(data)
     } else {
         ItemStack::Empty
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ContainerKind;
+
+    #[test]
+    fn hopper_uses_five_slots_before_player_inventory() {
+        assert_eq!(ContainerKind::Hopper.slot_count(), 41);
+        assert_eq!(ContainerKind::Hopper.inv_start(), 5);
+        assert_eq!(ContainerKind::Hopper.hotbar_menu_slot(0), 32);
+        assert_eq!(ContainerKind::Hopper.hotbar_menu_slot(8), 40);
+    }
+
+    #[test]
+    fn generic_three_by_three_uses_nine_slots_before_player_inventory() {
+        assert_eq!(ContainerKind::Generic3x3.slot_count(), 45);
+        assert_eq!(ContainerKind::Generic3x3.inv_start(), 9);
+        assert_eq!(ContainerKind::Generic3x3.hotbar_menu_slot(0), 36);
+        assert_eq!(ContainerKind::Generic3x3.hotbar_menu_slot(8), 44);
+    }
+
+    #[test]
+    fn brewing_uses_three_bottles_ingredient_and_fuel() {
+        assert_eq!(ContainerKind::Brewing.slot_count(), 41);
+        assert_eq!(ContainerKind::Brewing.inv_start(), 5);
+        assert_eq!(ContainerKind::Brewing.hotbar_menu_slot(0), 32);
+        assert_eq!(ContainerKind::Brewing.hotbar_menu_slot(8), 40);
+    }
+
+    #[test]
+    fn beacon_uses_one_payment_slot_before_player_inventory() {
+        assert_eq!(ContainerKind::Beacon.slot_count(), 37);
+        assert_eq!(ContainerKind::Beacon.inv_start(), 1);
+        assert_eq!(ContainerKind::Beacon.hotbar_menu_slot(0), 28);
+        assert_eq!(ContainerKind::Beacon.hotbar_menu_slot(8), 36);
+    }
+
+    #[test]
+    fn merchant_uses_two_payment_slots_and_one_result_before_inventory() {
+        assert_eq!(ContainerKind::Merchant.slot_count(), 39);
+        assert_eq!(ContainerKind::Merchant.inv_start(), 3);
+        assert_eq!(ContainerKind::Merchant.hotbar_menu_slot(0), 30);
+        assert_eq!(ContainerKind::Merchant.hotbar_menu_slot(8), 38);
     }
 }
