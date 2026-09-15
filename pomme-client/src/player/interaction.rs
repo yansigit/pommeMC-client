@@ -1290,6 +1290,16 @@ fn opens_menu(state: BlockState) -> bool {
             | "barrel"
             | "dropper"
             | "dispenser"
+            | "brewing_stand"
+            | "hopper"
+            | "beacon"
+            | "smithing_table"
+            | "stonecutter"
+            | "loom"
+            | "cartography_table"
+            | "grindstone"
+            | "lectern"
+            | "crafter"
     ) || id.ends_with("shulker_box")
         || id.ends_with("anvil")
 }
