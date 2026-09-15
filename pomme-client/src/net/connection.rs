@@ -811,8 +811,8 @@ async fn game_loop(
     let chat_tree = shared_tree.clone();
     let chat_secure_required = Arc::clone(&secure_chat_required);
     let chat_event_tx = event_tx.clone();
-    tokio::spawn(async move {
-        while let Ok(msg) = tokio::task::block_in_place(|| chat_rx.recv()) {
+    tokio::task::spawn_blocking(move || {
+        while let Ok(msg) = chat_rx.recv() {
             let packet = if let Some(command) = msg.strip_prefix('/') {
                 tracing::info!("Sending command: {command:?}");
                 let signable = chat_tree
@@ -1250,5 +1250,163 @@ mod tests {
         drop(server.reader);
         drop(writer_tx);
         let _ = timeout(Duration::from_millis(250), writer_error_rx.recv()).await;
+    }
+
+    #[tokio::test]
+    async fn strict_login_blocks_unsigned_chat_at_the_network_boundary() {
+        use std::time::Duration;
+
+        use azalea_auth::game_profile::GameProfile;
+        use azalea_core::entity_id::MinecraftEntityId;
+        use azalea_core::game_type::{GameMode, OptionalGameType};
+        use azalea_protocol::packets::config::ServerboundConfigPacket;
+        use azalea_protocol::packets::config::c_finish_configuration::ClientboundFinishConfiguration;
+        use azalea_protocol::packets::game::ClientboundGamePacket;
+        use azalea_protocol::packets::game::c_login::ClientboundLogin;
+        use azalea_protocol::packets::handshake::ServerboundHandshakePacket;
+        use azalea_protocol::packets::login::{ClientboundLoginFinished, ServerboundLoginPacket};
+        use azalea_registry::DataRegistry;
+        use uuid::Uuid;
+
+        use crate::net::conn::memory_pipes;
+
+        async fn sent<P: azalea_protocol::packets::ProtocolPacket + std::fmt::Debug>(
+            peer: &mut Conn,
+        ) -> P {
+            peer.read_packet().await.unwrap()
+        }
+
+        async fn received(event_rx: &crossbeam_channel::Receiver<NetworkEvent>) -> NetworkEvent {
+            let event_rx = event_rx.clone();
+            tokio::task::spawn_blocking(move || {
+                event_rx
+                    .recv_timeout(Duration::from_secs(2))
+                    .expect("network event channel closed or timed out")
+            })
+            .await
+            .expect("network event receiver task panicked")
+        }
+
+        let (client_end, server_end) = memory_pipes();
+        let mut peer = Conn::from_memory(server_end);
+        let (event_tx, event_rx) = crossbeam_channel::bounded(4096);
+        let (chat_tx, chat_rx) = crossbeam_channel::bounded(64);
+        let (packet_tx, packet_rx) = mpsc::unbounded_channel();
+        let secure_chat_required = Arc::new(AtomicBool::new(false));
+
+        let client = tokio::spawn(connect_to_server(
+            ConnectArgs {
+                transport: Transport::Memory(client_end),
+                username: "Steve".to_owned(),
+                uuid: Uuid::nil(),
+                access_token: None,
+                view_distance: 8,
+            },
+            event_tx,
+            chat_rx,
+            packet_tx,
+            packet_rx,
+            secure_chat_required,
+        ));
+
+        assert!(matches!(
+            sent(&mut peer).await,
+            ServerboundHandshakePacket::Intention(p) if p.protocol_version == LATEST.protocol
+        ));
+        assert!(matches!(
+            sent(&mut peer).await,
+            ServerboundLoginPacket::Hello(p) if p.name == "Steve"
+        ));
+        peer.write_packet(ClientboundLoginFinished {
+            game_profile: GameProfile::new(Uuid::nil(), "Steve".to_owned()),
+            session_id: Uuid::nil(),
+        })
+        .await
+        .unwrap();
+        assert!(matches!(
+            sent(&mut peer).await,
+            ServerboundLoginPacket::LoginAcknowledged(_)
+        ));
+        assert!(matches!(
+            sent(&mut peer).await,
+            ServerboundConfigPacket::CustomPayload(p) if p.identifier.to_string() == "minecraft:brand"
+        ));
+        assert!(matches!(
+            sent(&mut peer).await,
+            ServerboundConfigPacket::ClientInformation(p) if p.information.view_distance == 8
+        ));
+        peer.write_packet(ClientboundFinishConfiguration)
+            .await
+            .unwrap();
+        let _ = received(&event_rx).await;
+        let _ = received(&event_rx).await;
+
+        peer.write_packet(ClientboundGamePacket::Login(ClientboundLogin {
+            player_id: MinecraftEntityId(7),
+            hardcore: false,
+            levels: vec!["minecraft:overworld".into()],
+            max_players: 20,
+            chunk_radius: 12,
+            simulation_distance: 10,
+            reduced_debug_info: false,
+            show_death_screen: true,
+            do_limited_crafting: false,
+            common: azalea_protocol::packets::common::CommonPlayerSpawnInfo {
+                dimension_type: azalea_registry::data::DimensionKind::new_raw(0),
+                dimension: "minecraft:overworld".into(),
+                seed: 42,
+                game_type: GameMode::Survival,
+                previous_game_type: OptionalGameType(None),
+                is_debug: false,
+                is_flat: false,
+                last_death_location: None,
+                portal_cooldown: 0,
+                sea_level: 63,
+            },
+            online_mode: false,
+            enforces_secure_chat: true,
+        }))
+        .await
+        .unwrap();
+
+        let mut login_events = Vec::new();
+        while !login_events
+            .iter()
+            .any(|event| matches!(event, NetworkEvent::PlayerLogin { .. }))
+        {
+            login_events.push(received(&event_rx).await);
+        }
+
+        chat_tx.send("hello".into()).unwrap();
+        let warning = loop {
+            if let NetworkEvent::ChatMessage { spans } = received(&event_rx).await {
+                break spans;
+            }
+        };
+        assert_eq!(warning[0].text, SECURE_CHAT_NOTICE);
+
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(100);
+        let mut unsigned_chat_sent = false;
+        while tokio::time::Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            match tokio::time::timeout(remaining, peer.read_packet::<ServerboundGamePacket>()).await
+            {
+                Ok(Ok(packet)) => {
+                    if matches!(
+                        packet,
+                        ServerboundGamePacket::Chat(_) | ServerboundGamePacket::ChatCommand(_)
+                    ) {
+                        unsigned_chat_sent = true;
+                        break;
+                    }
+                }
+                Ok(Err(_)) | Err(_) => break,
+            }
+        }
+        assert!(
+            !unsigned_chat_sent,
+            "unsigned chat was written to the server"
+        );
+        client.abort();
     }
 }
