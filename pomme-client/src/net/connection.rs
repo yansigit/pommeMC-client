@@ -53,6 +53,10 @@ impl Default for LastSeenMessagesTracker {
 
 impl LastSeenMessagesTracker {
     fn add(&mut self, signature: azalea_crypto::signing::MessageSignature) {
+        let previous_index = (self.tail + LAST_SEEN_CAPACITY - 1) % LAST_SEEN_CAPACITY;
+        if self.signatures[previous_index].as_ref() == Some(&signature) {
+            return;
+        }
         self.signatures[self.tail] = Some(signature);
         self.tail = (self.tail + 1) % LAST_SEEN_CAPACITY;
         self.offset = self.offset.saturating_add(1);
@@ -1369,6 +1373,7 @@ mod tests {
     fn last_seen_window_acknowledges_recent_signed_messages() {
         let mut tracker = LastSeenMessagesTracker::default();
         tracker.add(test_signature(1));
+        tracker.add(test_signature(2));
         tracker.add(test_signature(2));
 
         let (signatures, update) = tracker.snapshot_and_acknowledge();
