@@ -226,6 +226,16 @@ pub fn handle_game_packet(
                 title: p.title.to_string(),
             });
         }
+        ClientboundGamePacket::MerchantOffers(p) => {
+            let _ = event_tx.try_send(NetworkEvent::MerchantOffers {
+                container_id: p.container_id,
+                offers: p.offers.clone(),
+                villager_level: p.villager_level,
+                villager_xp: p.villager_xp,
+                show_progress: p.show_progress,
+                can_restock: p.can_restock,
+            });
+        }
         ClientboundGamePacket::ContainerClose(_) => {
             let _ = event_tx.try_send(NetworkEvent::ContainerClosed);
         }

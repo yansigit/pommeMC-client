@@ -975,6 +975,28 @@ impl AppCore {
                         *d = value as i16;
                     }
                 }
+                NetworkEvent::MerchantOffers {
+                    container_id,
+                    offers,
+                    villager_level,
+                    villager_xp,
+                    show_progress,
+                    can_restock,
+                } => {
+                    use crate::app::phases::in_game::ContainerScreen;
+                    if let Some(c) = &mut game.open_container
+                        && c.id == container_id
+                        && c.screen == ContainerScreen::Merchant
+                    {
+                        c.merchant = Some(crate::ui::merchant::MerchantState {
+                            offers,
+                            villager_level,
+                            villager_xp,
+                            show_progress,
+                            can_restock,
+                        });
+                    }
+                }
                 NetworkEvent::OpenScreen {
                     container_id,
                     menu_type,
@@ -1008,6 +1030,7 @@ impl AppCore {
                         MenuKind::Hopper => Some(ContainerScreen::Hopper),
                         MenuKind::BrewingStand => Some(ContainerScreen::Brewing),
                         MenuKind::Beacon => Some(ContainerScreen::Beacon),
+                        MenuKind::Merchant => Some(ContainerScreen::Merchant),
                         MenuKind::ShulkerBox => Some(ContainerScreen::ShulkerBox),
                         MenuKind::Anvil => Some(ContainerScreen::Anvil),
                         MenuKind::Enchantment => Some(ContainerScreen::Enchantment),
@@ -1033,6 +1056,8 @@ impl AppCore {
                                 .then(crate::ui::enchantment::EnchantState::new),
                             beacon_primary: None,
                             beacon_secondary: None,
+                            merchant: (screen == ContainerScreen::Merchant)
+                                .then(crate::ui::merchant::MerchantState::default),
                             state_id: 0,
                         });
                         game.sync_container_from_inventory();

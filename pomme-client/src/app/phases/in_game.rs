@@ -51,6 +51,7 @@ pub enum ContainerScreen {
     Hopper,
     Brewing,
     Beacon,
+    Merchant,
     ShulkerBox,
     Anvil,
     Enchantment,
@@ -66,6 +67,7 @@ impl ContainerScreen {
             Self::Hopper => ContainerKind::Hopper,
             Self::Brewing => ContainerKind::Brewing,
             Self::Beacon => ContainerKind::Beacon,
+            Self::Merchant => ContainerKind::Merchant,
             Self::ShulkerBox => ContainerKind::ShulkerBox,
             Self::Anvil => ContainerKind::Anvil,
             Self::Enchantment => ContainerKind::Enchantment,
@@ -94,6 +96,7 @@ pub struct OpenContainer {
     /// may reject a selection based on beacon tier or payment.
     pub beacon_primary: Option<u32>,
     pub beacon_secondary: Option<u32>,
+    pub merchant: Option<crate::ui::merchant::MerchantState>,
     /// This menu's latest server state id, echoed in container clicks.
     pub state_id: u32,
 }
@@ -2490,6 +2493,23 @@ pub fn update_game(
                     }
                     result
                 }
+                ContainerScreen::Merchant => crate::ui::merchant::build_merchant(
+                    &mut elements,
+                    sw,
+                    sh,
+                    core.input.cursor_pos(),
+                    &input,
+                    &container.slots,
+                    &container.title,
+                    container
+                        .merchant
+                        .as_ref()
+                        .expect("merchant screen has state"),
+                    &game.cursor_item,
+                    &mut game.inv_drag,
+                    &mut game.inv_last_click,
+                    gs,
+                ),
                 ContainerScreen::ShulkerBox => crate::ui::chest::build_shulker_box(
                     &mut elements,
                     sw,
@@ -2551,15 +2571,24 @@ pub fn update_game(
                 }
             };
             if let Some(button_id) = result.button {
-                use azalea_protocol::packets::game::s_container_button_click::ServerboundContainerButtonClick;
-                connection
-                    .packet_tx
-                    .send(ServerboundGamePacket::ContainerButtonClick(
-                        ServerboundContainerButtonClick {
-                            container_id: container.id,
-                            button_id,
-                        },
-                    ));
+                if container.screen == ContainerScreen::Merchant {
+                    use azalea_protocol::packets::game::s_select_trade::ServerboundSelectTrade;
+                    connection
+                        .packet_tx
+                        .send(ServerboundGamePacket::SelectTrade(ServerboundSelectTrade {
+                            item: button_id,
+                        }));
+                } else {
+                    use azalea_protocol::packets::game::s_container_button_click::ServerboundContainerButtonClick;
+                    connection
+                        .packet_tx
+                        .send(ServerboundGamePacket::ContainerButtonClick(
+                            ServerboundContainerButtonClick {
+                                container_id: container.id,
+                                button_id,
+                            },
+                        ));
+                }
             }
             (result.clicked_outside, result.ops)
         } else {

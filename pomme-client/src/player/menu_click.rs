@@ -17,6 +17,7 @@ use azalea_registry::builtin::ItemKind;
 /// `Chest` covers every generic 9xN menu (chests, ender chests, barrels, ...).
 /// `Hopper` covers the five-slot hopper menu. Brewing and beacon menus use the
 /// same server-authoritative click path with their vanilla slot layouts.
+/// Merchant covers the two payment slots, result slot, and player inventory.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ContainerKind {
     Player,
@@ -26,6 +27,7 @@ pub enum ContainerKind {
     Hopper,
     Brewing,
     Beacon,
+    Merchant,
     ShulkerBox,
     Anvil,
     Enchantment,
@@ -40,6 +42,7 @@ impl ContainerKind {
             Self::Hopper => 41,
             Self::Brewing => 41,
             Self::Beacon => 37,
+            Self::Merchant => 39,
             Self::ShulkerBox => 63,
             Self::Enchantment => 38,
         }
@@ -55,6 +58,7 @@ impl ContainerKind {
             Self::Hopper => 5,
             Self::Brewing => 5,
             Self::Beacon => 1,
+            Self::Merchant => 3,
             Self::ShulkerBox => 27,
             Self::Enchantment => 2,
         }
@@ -75,6 +79,7 @@ impl ContainerKind {
             | Self::Hopper
             | Self::Brewing
             | Self::Beacon
+            | Self::Merchant
             | Self::ShulkerBox
             | Self::Enchantment => None,
         }
@@ -157,6 +162,11 @@ impl ContainerKind {
                 payment: ItemStack::Empty,
                 player: SlotList::default(),
             },
+            Self::Merchant => Menu::Merchant {
+                payments: SlotList::default(),
+                result: ItemStack::Empty,
+                player: SlotList::default(),
+            },
             Self::ShulkerBox => Menu::ShulkerBox {
                 contents: SlotList::default(),
                 player: SlotList::default(),
@@ -207,6 +217,7 @@ impl ContainerKind {
                 crate::player::inventory::item_resource_name(item.kind).as_str(),
                 "iron_ingot" | "gold_ingot" | "diamond" | "emerald" | "netherite_ingot"
             ),
+            (Self::Merchant, 0 | 1) => true,
             (Self::Brewing, 0..=2) => matches!(
                 crate::player::inventory::item_resource_name(item.kind).as_str(),
                 "glass_bottle" | "potion" | "splash_potion" | "lingering_potion"
@@ -607,6 +618,14 @@ mod tests {
         assert_eq!(ContainerKind::Beacon.inv_start(), 1);
         assert_eq!(ContainerKind::Beacon.hotbar_menu_slot(0), 28);
         assert_eq!(ContainerKind::Beacon.hotbar_menu_slot(8), 36);
+    }
+
+    #[test]
+    fn merchant_uses_two_payment_slots_and_one_result_before_inventory() {
+        assert_eq!(ContainerKind::Merchant.slot_count(), 39);
+        assert_eq!(ContainerKind::Merchant.inv_start(), 3);
+        assert_eq!(ContainerKind::Merchant.hotbar_menu_slot(0), 30);
+        assert_eq!(ContainerKind::Merchant.hotbar_menu_slot(8), 38);
     }
 }
 

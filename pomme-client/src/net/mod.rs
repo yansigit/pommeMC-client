@@ -149,6 +149,14 @@ pub enum NetworkEvent {
         menu_type: azalea_registry::builtin::MenuKind,
         title: String,
     },
+    MerchantOffers {
+        container_id: i32,
+        offers: Vec<azalea_protocol::packets::game::c_merchant_offers::MerchantOffer>,
+        villager_level: u32,
+        villager_xp: u32,
+        show_progress: bool,
+        can_restock: bool,
+    },
     ContainerClosed,
     CursorItem {
         item: ItemStack,

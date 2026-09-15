@@ -19,6 +19,7 @@ pub mod game_mode_switcher;
 pub mod hud;
 pub mod inventory;
 pub mod menu;
+pub mod merchant;
 pub mod pause;
 pub mod player_tab;
 pub mod server_list;

@@ -28,8 +28,9 @@ pub struct ContainerResult {
     /// Container-click operations to send this frame (usually 0-1; a drag
     /// release emits a start/add.../end sequence).
     pub ops: Vec<ClickOperation>,
-    /// Menu button clicked this frame (`ServerboundContainerButtonClick`),
-    /// e.g. an enchantment option.
+    /// Menu action ID clicked this frame. Most screens use this for
+    /// `ServerboundContainerButtonClick`, while merchant screens use it as
+    /// the selected trade index for `ServerboundSelectTrade`.
     pub button: Option<u32>,
     /// Beacon effect selection clicked this frame. This uses the dedicated
     /// `ServerboundSetBeacon` packet rather than a container button packet.
