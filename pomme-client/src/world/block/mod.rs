@@ -550,6 +550,20 @@ pub fn block_id(state: BlockState) -> &'static str {
     block_data(state).id
 }
 
+/// Vanilla `BlockBehaviour.Properties.friction` for blocks that materially
+/// change horizontal movement. The generated block tables intentionally keep
+/// gameplay properties compact, so this small table is the runtime equivalent
+/// of the vanilla block registrations.
+pub fn slipperiness(state: BlockState) -> f64 {
+    match block_id(state) {
+        "blue_ice" => 0.989,
+        "ice" | "packed_ice" => 0.98,
+        "slime_block" => 0.8,
+        "honey_block" => 0.4,
+        _ => 0.6,
+    }
+}
+
 pub fn block_properties(state: BlockState) -> &'static PropMap {
     &block_data(state).properties
 }
@@ -731,6 +745,17 @@ mod tests {
         assert!(!has_collision(find_state("oak_button", &[])));
         assert!(has_collision(find_state("stone", &[])));
         assert!(has_collision(find_state("oak_fence", &[])));
+    }
+
+    #[test]
+    fn slipperiness_matches_modern_vanilla_blocks() {
+        setup();
+        assert_eq!(slipperiness(find_state("ice", &[])), 0.98);
+        assert_eq!(slipperiness(find_state("packed_ice", &[])), 0.98);
+        assert_eq!(slipperiness(find_state("blue_ice", &[])), 0.989);
+        assert_eq!(slipperiness(find_state("slime_block", &[])), 0.8);
+        assert_eq!(slipperiness(find_state("honey_block", &[])), 0.4);
+        assert_eq!(slipperiness(find_state("stone", &[])), 0.6);
     }
 
     #[test]

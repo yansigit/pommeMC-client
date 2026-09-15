@@ -1006,10 +1006,15 @@ fn tick_item_physics(id: i32, entity: &mut ItemEntity, chunk_store: &ChunkStore)
     entity.position += delta;
     entity.on_ground = on_ground;
 
-    // TODO: per-block slipperiness (ice/slime); vanilla multiplies by the
-    // friction of the block below, default 0.6.
+    // Vanilla multiplies by the friction of the block below, default 0.6.
+    let ground_state = chunk_store.get_block_state(
+        block_x,
+        (entity.position.y - 1.0e-4).floor() as i32,
+        block_z,
+    );
+    let slipperiness = crate::world::block::slipperiness(ground_state);
     let ground_friction = if on_ground {
-        ITEM_AIR_DRAG * 0.6
+        ITEM_AIR_DRAG * slipperiness
     } else {
         ITEM_AIR_DRAG
     };

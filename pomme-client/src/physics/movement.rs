@@ -15,7 +15,6 @@ const JUMP_VELOCITY: f64 = 0.42;
 const VERTICAL_DRAG: f32 = 0.98;
 const HORIZONTAL_DRAG: f64 = 0.91;
 const BLOCK_FRICTION: f64 = 0.6;
-const GROUND_FRICTION: f64 = BLOCK_FRICTION * HORIZONTAL_DRAG;
 const GROUND_ACCEL_FACTOR: f64 = 0.216;
 const MOVEMENT_SPEED: f64 = 0.1;
 const SPRINT_SPEED_MODIFIER: f64 = 0.3;
@@ -274,7 +273,8 @@ fn tick_land(
         MOVEMENT_SPEED
     };
 
-    let accel = friction_influenced_speed(speed, player, BLOCK_FRICTION);
+    let block_friction = ground_slipperiness(player, chunk_store);
+    let accel = friction_influenced_speed(speed, player, block_friction);
     let (sin_y_rot, cos_y_rot) = look_sin_cos(player);
     let (move_x, move_z) = world_movement(forward, strafe, sin_y_rot, cos_y_rot);
     player.velocity.x += move_x * accel;
@@ -294,7 +294,7 @@ fn tick_land(
     player.velocity.y *= VERTICAL_DRAG as f64;
 
     let h_friction = if on_ground_at_start {
-        GROUND_FRICTION
+        block_friction * HORIZONTAL_DRAG
     } else {
         HORIZONTAL_DRAG
     };
@@ -302,6 +302,16 @@ fn tick_land(
     player.velocity.z *= h_friction;
 
     overwrite_flying_vy(player, saved_vy);
+}
+
+/// Vanilla samples `getBlockStateOnGround`, which is the block directly below
+/// the player's feet. Use a small epsilon so an exact integer foot position
+/// still samples the supporting block rather than the air above it.
+fn ground_slipperiness(player: &LocalPlayer, chunk_store: &ChunkStore) -> f64 {
+    let x = player.position.x.floor() as i32;
+    let y = (player.position.y - 1.0e-4).floor() as i32;
+    let z = player.position.z.floor() as i32;
+    crate::world::block::slipperiness(chunk_store.get_block_state(x, y, z))
 }
 
 fn tick_water(
@@ -740,5 +750,14 @@ mod tests {
         player.flying = true;
         update_fall_distance(&mut player, -1.0);
         assert_eq!(player.fall_distance, 0.0);
+    }
+
+    #[test]
+    fn ground_slipperiness_uses_the_block_under_the_feet() {
+        crate::world::block::init("26.2");
+        let mut player = LocalPlayer::new();
+        player.position.y = 1.0;
+        let chunks = ChunkStore::new(2);
+        assert_eq!(ground_slipperiness(&player, &chunks), BLOCK_FRICTION);
     }
 }
