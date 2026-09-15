@@ -1000,6 +1000,11 @@ impl AppCore {
                         MenuKind::Generic9x4 => Some(ContainerScreen::Chest { rows: 4 }),
                         MenuKind::Generic9x5 => Some(ContainerScreen::Chest { rows: 5 }),
                         MenuKind::Generic9x6 => Some(ContainerScreen::Chest { rows: 6 }),
+                        // Dropper and dispenser use the same nine-slot layout
+                        // as the modern generic_3x3 menu. Their behavior is
+                        // server-authoritative, so the generic slot screen is
+                        // sufficient for all inventory operations.
+                        MenuKind::Generic3x3 => Some(ContainerScreen::Chest { rows: 1 }),
                         MenuKind::ShulkerBox => Some(ContainerScreen::ShulkerBox),
                         MenuKind::Anvil => Some(ContainerScreen::Anvil),
                         MenuKind::Enchantment => Some(ContainerScreen::Enchantment),

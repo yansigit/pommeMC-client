@@ -1288,6 +1288,8 @@ fn opens_menu(state: BlockState) -> bool {
             | "trapped_chest"
             | "ender_chest"
             | "barrel"
+            | "dropper"
+            | "dispenser"
     ) || id.ends_with("shulker_box")
         || id.ends_with("anvil")
 }
