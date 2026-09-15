@@ -78,6 +78,11 @@ pub enum ModelConvention {
     /// model matrices need no flip of their own. All mob models use this.
     #[default]
     EntityYDown,
+    /// Vanilla entity-model coordinates rendered as a block entity. Cubes and
+    /// rotations use the normal y-down convention, but root parts are not
+    /// shifted by `MODEL_Y_OFFSET`; statue renderers place their model root at
+    /// y=0 and rotate it 180 degrees around Z instead.
+    BlockEntityYDown,
     /// Vanilla block-entity literal space: y-up, coords/16 relative to the
     /// block's min corner, pivots at `offset/16`, vanilla ZYX euler with
     /// unmodified signs. Used by the chest models.
@@ -167,10 +172,13 @@ impl BakedEntityModel {
 
             let pivot = part.offset + extra_translation;
             let offset = match self.convention {
-                ModelConvention::EntityYDown => {
+                ModelConvention::EntityYDown | ModelConvention::BlockEntityYDown => {
                     // Child pivots are relative to their parent (already
-                    // re-based), so they only mirror.
-                    let rebase = if part.parent.is_some() {
+                    // re-based), so they only mirror. Statue block entities
+                    // explicitly reset their root y to zero.
+                    let rebase = if part.parent.is_some()
+                        || self.convention == ModelConvention::BlockEntityYDown
+                    {
                         0.0
                     } else {
                         MODEL_REBASE_Y
@@ -186,7 +194,7 @@ impl BakedEntityModel {
             // by diag(1,-1,1): x and z angles negate, y keeps its sign,
             // order stays ZYX — matching the pivot's y-only mirror above.
             let rot_mat = match self.convention {
-                ModelConvention::EntityYDown => {
+                ModelConvention::EntityYDown | ModelConvention::BlockEntityYDown => {
                     Mat4::from_rotation_z(-rot.z)
                         * Mat4::from_rotation_y(rot.y)
                         * Mat4::from_rotation_x(-rot.x)
@@ -204,7 +212,10 @@ impl BakedEntityModel {
 
             let transform = if let Some(parent_idx) = part.parent {
                 transforms[parent_idx] * local
-            } else if self.convention == ModelConvention::EntityYDown {
+            } else if matches!(
+                self.convention,
+                ModelConvention::EntityYDown | ModelConvention::BlockEntityYDown
+            ) {
                 // The X half of vanilla's `scale(-1,-1,1)` (the bake negates
                 // Y); without it every model renders left-right mirrored.
                 Mat4::from_scale(Vec3::new(-1.0, 1.0, 1.0)) * local

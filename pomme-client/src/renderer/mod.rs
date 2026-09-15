@@ -2,6 +2,7 @@ pub mod block_entity_model;
 pub mod camera;
 pub mod chunk;
 mod context;
+mod copper_golem_model;
 pub mod entity_model;
 pub(crate) mod packing;
 pub mod pipelines;

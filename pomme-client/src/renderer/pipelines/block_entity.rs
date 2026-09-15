@@ -15,7 +15,7 @@ use crate::renderer::entity_model::{BakedEntityModel, ModelConvention, PartAnim}
 use crate::renderer::pipelines::entity_renderer::{
     BlendMode, ModelInput, WHITE_TINT, create_pipeline, fallback_texture,
 };
-use crate::renderer::{MAX_FRAMES_IN_FLIGHT, block_entity_model, util};
+use crate::renderer::{MAX_FRAMES_IN_FLIGHT, block_entity_model, copper_golem_model, util};
 
 pub struct BlockEntityRenderInfo {
     pub pos: BlockPos,
@@ -143,6 +143,27 @@ const SHULKER_TEXTURES: &[&[&str]] = &[
     &["minecraft/textures/entity/shulker/shulker.png"],
 ];
 
+/// Four pose models share each oxidation texture. `variant_for_block` packs
+/// `oxidation * 4 + pose`, while the draw path uses `variant % models.len()`.
+const COPPER_GOLEM_STATUE_TEXTURES: &[&[&str]] = &[
+    &["minecraft/textures/entity/copper_golem/copper_golem.png"],
+    &["minecraft/textures/entity/copper_golem/copper_golem.png"],
+    &["minecraft/textures/entity/copper_golem/copper_golem.png"],
+    &["minecraft/textures/entity/copper_golem/copper_golem.png"],
+    &["minecraft/textures/entity/copper_golem/copper_golem_exposed.png"],
+    &["minecraft/textures/entity/copper_golem/copper_golem_exposed.png"],
+    &["minecraft/textures/entity/copper_golem/copper_golem_exposed.png"],
+    &["minecraft/textures/entity/copper_golem/copper_golem_exposed.png"],
+    &["minecraft/textures/entity/copper_golem/copper_golem_weathered.png"],
+    &["minecraft/textures/entity/copper_golem/copper_golem_weathered.png"],
+    &["minecraft/textures/entity/copper_golem/copper_golem_weathered.png"],
+    &["minecraft/textures/entity/copper_golem/copper_golem_weathered.png"],
+    &["minecraft/textures/entity/copper_golem/copper_golem_oxidized.png"],
+    &["minecraft/textures/entity/copper_golem/copper_golem_oxidized.png"],
+    &["minecraft/textures/entity/copper_golem/copper_golem_oxidized.png"],
+    &["minecraft/textures/entity/copper_golem/copper_golem_oxidized.png"],
+];
+
 fn name_index(table: &[&str], name: &str) -> Option<u32> {
     table.iter().position(|&n| n == name).map(|i| i as u32)
 }
@@ -206,6 +227,21 @@ pub fn variant_for_block(
             .or_else(|| name.strip_suffix("_wall_sign"))
             .and_then(|s| name_index(&SIGN_WOOD_NAMES, s))
             .unwrap_or(0),
+        BlockEntityKind::CopperGolemStatue => {
+            let oxidation = match name.strip_prefix("waxed_").unwrap_or(name) {
+                "exposed_copper_golem_statue" => 1,
+                "weathered_copper_golem_statue" => 2,
+                "oxidized_copper_golem_statue" => 3,
+                _ => 0,
+            };
+            let pose = match props.get("copper_golem_pose") {
+                Some("running") => 1,
+                Some("sitting") => 2,
+                Some("star") => 3,
+                _ => 0,
+            };
+            oxidation * 4 + pose
+        }
         _ => 0,
     }
 }
@@ -235,7 +271,8 @@ pub fn yaw_for_block(kind: BlockEntityKind, props: &crate::world::block::PropMap
         BlockEntityKind::Chest
         | BlockEntityKind::TrappedChest
         | BlockEntityKind::EnderChest
-        | BlockEntityKind::ShulkerBox => match props.get("facing") {
+        | BlockEntityKind::ShulkerBox
+        | BlockEntityKind::CopperGolemStatue => match props.get("facing") {
             Some("south") => 0.0,
             Some("west") => 90.0,
             Some("north") => 180.0,
@@ -306,6 +343,12 @@ fn kind_definitions() -> Vec<KindDef> {
             models: vec![block_entity_model::bake_sign_model()],
             tex_variants: SIGN_TEXTURES,
             tex_size: 32,
+        },
+        KindDef {
+            kind: BlockEntityKind::CopperGolemStatue,
+            models: copper_golem_model::bake_models(),
+            tex_variants: COPPER_GOLEM_STATUE_TEXTURES,
+            tex_size: 64,
         },
     ]
 }
@@ -539,7 +582,7 @@ impl BlockEntityPipeline {
             let model_mat = match model.convention {
                 // With the 180 yaw offset and the convention's baked-in flip
                 // this reproduces vanilla's block-entity `scale(1,-1,-1)`.
-                ModelConvention::EntityYDown => {
+                ModelConvention::EntityYDown | ModelConvention::BlockEntityYDown => {
                     glam::Mat4::from_translation(block_center)
                         * glam::Mat4::from_rotation_y((180.0f32 - info.yaw).to_radians())
                 }
@@ -758,5 +801,58 @@ fn build_texture_slot(
         view,
         allocation,
         set,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::world::block::PropMap;
+
+    fn props(entries: Vec<(&'static str, &'static str)>) -> PropMap {
+        PropMap::from_pairs(entries)
+    }
+
+    #[test]
+    fn copper_golem_variant_packs_pose_and_oxidation() {
+        let kind = BlockEntityKind::CopperGolemStatue;
+        let running = props(vec![("copper_golem_pose", "running")]);
+        let sitting = props(vec![("copper_golem_pose", "sitting")]);
+        let star = props(vec![("copper_golem_pose", "star")]);
+
+        assert_eq!(variant_for_block(kind, "copper_golem_statue", &running), 1);
+        assert_eq!(
+            variant_for_block(kind, "exposed_copper_golem_statue", &sitting),
+            6
+        );
+        assert_eq!(
+            variant_for_block(kind, "weathered_copper_golem_statue", &star),
+            11
+        );
+        assert_eq!(
+            variant_for_block(kind, "waxed_oxidized_copper_golem_statue", &running),
+            13
+        );
+    }
+
+    #[test]
+    fn copper_golem_facing_uses_vanilla_yaw() {
+        let props = props(vec![("facing", "east")]);
+        assert_eq!(
+            yaw_for_block(BlockEntityKind::CopperGolemStatue, &props),
+            270.0
+        );
+    }
+
+    #[test]
+    fn copper_golem_definition_covers_every_pose_and_oxidation() {
+        let definition = kind_definitions()
+            .into_iter()
+            .find(|definition| definition.kind == BlockEntityKind::CopperGolemStatue)
+            .expect("copper golem statue block-entity definition");
+
+        assert_eq!(definition.models.len(), 4);
+        assert_eq!(definition.tex_variants.len(), 16);
+        assert_eq!(definition.tex_size, 64);
     }
 }

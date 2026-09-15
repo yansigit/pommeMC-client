@@ -25,6 +25,7 @@ pub fn rendered_kind(name: &str) -> Option<BlockEntityKind> {
         // Copper chests share vanilla's `chest` block entity type; the
         // weathering stage only picks the texture.
         s if s.ends_with("copper_chest") => Some(BlockEntityKind::Chest),
+        s if s.ends_with("copper_golem_statue") => Some(BlockEntityKind::CopperGolemStatue),
         s if s == "shulker_box" || s.ends_with("_shulker_box") => Some(BlockEntityKind::ShulkerBox),
         _ => None,
     }
@@ -39,6 +40,7 @@ fn is_rendered(kind: BlockEntityKind) -> bool {
             | BlockEntityKind::TrappedChest
             | BlockEntityKind::EnderChest
             | BlockEntityKind::ShulkerBox
+            | BlockEntityKind::CopperGolemStatue
     )
 }
 
@@ -140,4 +142,29 @@ pub fn is_invisible_block(name: &str) -> bool {
 
 pub fn is_fluid_block(name: &str) -> bool {
     matches!(name, "water" | "lava" | "bubble_column")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_copper_golem_statue_uses_the_block_entity_renderer() {
+        for name in [
+            "copper_golem_statue",
+            "exposed_copper_golem_statue",
+            "weathered_copper_golem_statue",
+            "oxidized_copper_golem_statue",
+            "waxed_copper_golem_statue",
+            "waxed_exposed_copper_golem_statue",
+            "waxed_weathered_copper_golem_statue",
+            "waxed_oxidized_copper_golem_statue",
+        ] {
+            assert_eq!(
+                rendered_kind(name),
+                Some(BlockEntityKind::CopperGolemStatue)
+            );
+            assert!(is_block_entity_block(name));
+        }
+    }
 }
