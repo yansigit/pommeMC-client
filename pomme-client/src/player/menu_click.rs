@@ -1,8 +1,8 @@
 //! Client-side prediction of survival container clicks: a port of vanilla
 //! `AbstractContainerMenu.doClick` for the menus we open (player inventory,
-//! crafting table, furnace, chests). The server stays authoritative and
-//! reconciles, so a wrong prediction only causes a self-correcting glitch,
-//! never item dup/loss.
+//! crafting table, furnace, chests, and hoppers). The server stays
+//! authoritative and reconciles, so a wrong prediction only causes a
+//! self-correcting glitch, never item dup/loss.
 
 use azalea_inventory::components::{EquipmentSlot, Equippable};
 use azalea_inventory::item::MaxStackSizeExt;
@@ -15,12 +15,14 @@ use azalea_registry::builtin::ItemKind;
 /// Which container menu a click applies to. `Furnace` covers the furnace,
 /// blast furnace, and smoker menus, which share the same slot structure;
 /// `Chest` covers every generic 9xN menu (chests, ender chests, barrels, ...).
+/// `Hopper` covers the five-slot hopper menu.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ContainerKind {
     Player,
     CraftingTable,
     Furnace,
     Chest { rows: u8 },
+    Hopper,
     ShulkerBox,
     Anvil,
     Enchantment,
@@ -32,6 +34,7 @@ impl ContainerKind {
             Self::Player | Self::CraftingTable => 46,
             Self::Furnace | Self::Anvil => 39,
             Self::Chest { rows } => rows as usize * 9 + 36,
+            Self::Hopper => 41,
             Self::ShulkerBox => 63,
             Self::Enchantment => 38,
         }
@@ -44,6 +47,7 @@ impl ContainerKind {
             Self::Player | Self::CraftingTable => 10,
             Self::Furnace | Self::Anvil => 3,
             Self::Chest { rows } => rows as usize * 9,
+            Self::Hopper => 5,
             Self::ShulkerBox => 27,
             Self::Enchantment => 2,
         }
@@ -59,7 +63,11 @@ impl ContainerKind {
         match self {
             Self::Player | Self::CraftingTable => Some(0),
             Self::Anvil => Some(2),
-            Self::Furnace | Self::Chest { .. } | Self::ShulkerBox | Self::Enchantment => None,
+            Self::Furnace
+            | Self::Chest { .. }
+            | Self::Hopper
+            | Self::ShulkerBox
+            | Self::Enchantment => None,
         }
     }
 
@@ -123,6 +131,10 @@ impl ContainerKind {
                 player: SlotList::default(),
             },
             Self::Chest { .. } => Menu::Generic9x6 {
+                contents: SlotList::default(),
+                player: SlotList::default(),
+            },
+            Self::Hopper => Menu::Hopper {
                 contents: SlotList::default(),
                 player: SlotList::default(),
             },
@@ -462,7 +474,7 @@ fn quick_move(kind: ContainerKind, menu: &mut Menu, s: usize) {
             break;
         }
         match kind {
-            ContainerKind::Chest { .. } | ContainerKind::ShulkerBox => {
+            ContainerKind::Chest { .. } | ContainerKind::Hopper | ContainerKind::ShulkerBox => {
                 let split = kind.inv_start();
                 if s < split {
                     move_item_stack_to(kind, menu, s, split..menu.len(), true);
@@ -506,6 +518,19 @@ fn quick_move(kind: ContainerKind, menu: &mut Menu, s: usize) {
         if menu.slot(s).map(ItemStack::count).unwrap_or(0) == before {
             break;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ContainerKind;
+
+    #[test]
+    fn hopper_uses_five_slots_before_player_inventory() {
+        assert_eq!(ContainerKind::Hopper.slot_count(), 41);
+        assert_eq!(ContainerKind::Hopper.inv_start(), 5);
+        assert_eq!(ContainerKind::Hopper.hotbar_menu_slot(0), 32);
+        assert_eq!(ContainerKind::Hopper.hotbar_menu_slot(8), 40);
     }
 }
 

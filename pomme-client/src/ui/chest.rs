@@ -110,6 +110,77 @@ pub fn build_shulker_box(
     )
 }
 
+/// The five-slot hopper screen. Its slot and player-inventory indices differ
+/// from a generic chest, so it uses the same server-authoritative gesture path
+/// with a dedicated `ContainerKind::Hopper` layout.
+#[allow(clippy::too_many_arguments)]
+pub fn build_hopper(
+    elements: &mut Vec<MenuElement>,
+    screen_w: f32,
+    screen_h: f32,
+    cursor: (f32, f32),
+    input: &ContainerInput,
+    slots: &[ItemStack],
+    title: &str,
+    cursor_item: &ItemStack,
+    drag: &mut Option<DragState>,
+    last_click: &mut Option<(u16, Instant)>,
+    gs: f32,
+) -> ContainerResult {
+    let panel = push_backdrop(elements, screen_w, screen_h, gs, 176.0, 133.0);
+    push_clipped_sprite(
+        elements,
+        &panel,
+        SpriteId::Generic54Top,
+        [0.0, 0.0, 176.0, TOP_TEX_H],
+        [0.0, 0.0, 176.0, 37.0],
+    );
+    panel.image(
+        elements,
+        SpriteId::Generic54Bottom,
+        0.0,
+        37.0,
+        176.0,
+        BOTTOM_TEX_H,
+    );
+    panel.label(elements, 8.0, 6.0, title);
+    panel.label(elements, 8.0, 55.0, "Inventory");
+
+    let mut ctx = SlotCtx::new(
+        elements,
+        &panel,
+        cursor,
+        ContainerKind::Hopper,
+        slots,
+        cursor_item,
+        drag,
+    );
+    ctx.player_rows(slots, 5, 32, 66.0);
+    for slot in 0..5u16 {
+        let item = slots.get(slot as usize).unwrap_or(&ItemStack::Empty);
+        ctx.slot(53.0 + slot as f32 * SLOT_STRIDE, 18.0, item, None, slot);
+    }
+
+    let (hovered, shown_cursor) = ctx.finish(cursor_item);
+    push_cursor_stack(elements, cursor, panel.scale, &shown_cursor);
+    let (ops, clicked_outside) = resolve_gesture(
+        input,
+        hovered,
+        &panel,
+        cursor,
+        ContainerKind::Hopper,
+        slots,
+        cursor_item,
+        drag,
+        last_click,
+    );
+    ContainerResult {
+        clicked_outside,
+        ops,
+        button: None,
+    }
+}
+
 /// The contents grid at GUI-unit y 18, the player rows at `main_y`, and the
 /// shared gesture tail.
 #[allow(clippy::too_many_arguments)]

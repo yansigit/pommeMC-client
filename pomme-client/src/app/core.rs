@@ -1005,6 +1005,7 @@ impl AppCore {
                         // server-authoritative, so the generic slot screen is
                         // sufficient for all inventory operations.
                         MenuKind::Generic3x3 => Some(ContainerScreen::Chest { rows: 1 }),
+                        MenuKind::Hopper => Some(ContainerScreen::Hopper),
                         MenuKind::ShulkerBox => Some(ContainerScreen::ShulkerBox),
                         MenuKind::Anvil => Some(ContainerScreen::Anvil),
                         MenuKind::Enchantment => Some(ContainerScreen::Enchantment),
