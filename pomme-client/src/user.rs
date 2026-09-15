@@ -75,6 +75,7 @@ mod tests {
         assert!(is_valid_username("sixteen_chars___"));
         assert!(!is_valid_username("ab"));
         assert!(!is_valid_username("way_too_long_player_name"));
+        assert!(!is_valid_username("VisualAcceptance2"));
         assert!(!is_valid_username("name-with-dash"));
         assert!(!is_valid_username("プレイヤー"));
     }
@@ -89,6 +90,16 @@ mod tests {
             ),
             Err(UserDataError::InvalidUsername { username })
                 if username == "AcceptancePlayerX"
+        ));
+    }
+
+    #[test]
+    fn rejects_original_graphics_test_username() {
+        assert_eq!("VisualAcceptance2".len(), 17);
+        assert!(matches!(
+            UserData::from_args(Some("VisualAcceptance2".to_string()), None, None,),
+            Err(UserDataError::InvalidUsername { username })
+                if username == "VisualAcceptance2"
         ));
     }
 

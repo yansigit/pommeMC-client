@@ -55,6 +55,11 @@ second also needs a server and validates the loaded-world render boundary, but
 neither command proves pixel parity or general gameplay. Review the PNG or
 compare it with a platform-specific baseline separately.
 
+The CLI rejects names outside Minecraft's 3-16 character ASCII grammar before
+the login packet is sent. For example, the former `VisualAcceptance2` test name
+is 17 characters and previously reached SteelMC as an opaque `malformed packet
+value: To long` disconnect.
+
 ## Required server-backed scenarios
 
 The following scenarios remain required for a validated release tier:
