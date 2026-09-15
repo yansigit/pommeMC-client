@@ -7,6 +7,8 @@ use azalea_protocol::packets::game::{
     ServerboundClientCommand, ServerboundGamePacket, s_client_command, s_client_tick_end,
 };
 use glam::{FloatExt, dvec3};
+#[cfg(feature = "singleplayer")]
+use pomme_singleplayer::{LaunchOptions, PendingWorld, Progress, ServerTransport, WorldHandle};
 use winit::keyboard::KeyCode;
 use winit::monitor::MonitorHandle;
 use winit::window::{CursorGrabMode, Fullscreen, Window};
@@ -20,6 +22,8 @@ use crate::dirs::DataDirs;
 use crate::discord::DiscordPresence;
 use crate::entity::components::{LookDirection, Position, Velocity};
 use crate::net::NetworkEvent;
+#[cfg(feature = "singleplayer")]
+use crate::net::conn::memory_pipes;
 use crate::net::connection::ConnectionHandle;
 use crate::physics::movement;
 use crate::player::LocalPlayer;
@@ -219,6 +223,10 @@ pub struct AppCore {
     pub input: InputState,
     pub menu: MainMenu,
     pub tokio_rt: Arc<tokio::runtime::Runtime>,
+    #[cfg(feature = "singleplayer")]
+    pending_singleplayer: Option<PendingWorld>,
+    #[cfg(feature = "singleplayer")]
+    integrated_world: Option<WorldHandle>,
     pub data_dirs: DataDirs,
     pub version: String,
     pub resource_packs: ResourcePackManager,
@@ -296,6 +304,10 @@ impl AppCore {
             input: InputState::new(),
             menu,
             tokio_rt,
+            #[cfg(feature = "singleplayer")]
+            pending_singleplayer: None,
+            #[cfg(feature = "singleplayer")]
+            integrated_world: None,
             data_dirs,
             version,
             resource_packs,
@@ -333,6 +345,60 @@ impl AppCore {
         }
     }
 
+    #[cfg(feature = "singleplayer")]
+    pub fn launch_singleplayer(
+        &mut self,
+        save_path: std::path::PathBuf,
+        seed: i64,
+    ) -> crate::net::connection::Transport {
+        // A previous launch can only still exist if the user selected a world
+        // twice without entering a connection phase. Stop it before replacing
+        // the ownership slot, matching vanilla's one integrated server rule.
+        self.stop_singleplayer();
+        let (client_end, server_end) = memory_pipes();
+        let pending = pomme_singleplayer::launch(LaunchOptions {
+            save_path,
+            seed,
+            view_distance: self.menu.render_distance as u8,
+            simulation_distance: self.menu.simulation_distance as u8,
+            transport: ServerTransport {
+                read: Box::new(server_end.rx),
+                write: Box::new(server_end.tx),
+            },
+        });
+        self.pending_singleplayer = Some(pending);
+        crate::net::connection::Transport::Memory(client_end)
+    }
+
+    /// Polls integrated-server startup without blocking the render thread.
+    /// Returns an error only after the server has reported a terminal failure.
+    #[cfg(feature = "singleplayer")]
+    pub fn poll_singleplayer(&mut self) -> Option<String> {
+        let Some(pending) = &mut self.pending_singleplayer else {
+            return None;
+        };
+        match pending.poll() {
+            Progress::Starting => None,
+            Progress::Ready(world) => {
+                self.integrated_world = Some(world);
+                self.pending_singleplayer = None;
+                None
+            }
+            Progress::Failed(error) => {
+                self.pending_singleplayer = None;
+                Some(error)
+            }
+        }
+    }
+
+    #[cfg(feature = "singleplayer")]
+    fn stop_singleplayer(&mut self) {
+        // Dropping either value requests cancellation. Taking both before the
+        // drops avoids keeping a server alive through a phase transition.
+        self.pending_singleplayer.take();
+        self.integrated_world.take();
+    }
+
     pub fn sync_display_mode(&mut self, window: &Window) {
         if self.menu.display_mode != self.display_mode {
             self.display_mode = self.menu.display_mode;
@@ -366,6 +432,8 @@ impl AppCore {
     /// Every return from a world or server, before the title screen shows.
     /// Vanilla builds a fresh `TitleScreen` here, which rolls a new splash.
     pub fn return_to_menu(&mut self, gfx: &mut Gfx) {
+        #[cfg(feature = "singleplayer")]
+        self.stop_singleplayer();
         self.clear_server_resource_packs(&mut gfx.renderer);
         gfx.renderer.clear_chunk_meshes();
         if let Some(p) = &mut self.presence {

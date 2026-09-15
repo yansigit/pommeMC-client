@@ -598,15 +598,24 @@ impl ApplicationHandler for App {
                         connection,
                         mut game,
                     } => {
-                        let update_result = update_connecting(
-                            core,
-                            dt,
-                            &mut gfx,
-                            &mut panorama,
-                            &mut connect_phase,
-                            &connection,
-                            &mut game,
-                        );
+                        #[cfg(feature = "singleplayer")]
+                        let startup_error = core.poll_singleplayer();
+                        #[cfg(not(feature = "singleplayer"))]
+                        let startup_error: Option<String> = None;
+
+                        let update_result = if let Some(reason) = startup_error {
+                            ConnectingUpdateResult::Disconnected { reason }
+                        } else {
+                            update_connecting(
+                                core,
+                                dt,
+                                &mut gfx,
+                                &mut panorama,
+                                &mut connect_phase,
+                                &connection,
+                                &mut game,
+                            )
+                        };
 
                         match update_result {
                             ConnectingUpdateResult::None => AppPhase::Connecting {

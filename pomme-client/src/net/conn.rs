@@ -15,9 +15,11 @@ use std::io::{self, Cursor};
 
 use azalea_crypto::{Aes128CfbDec, Aes128CfbEnc};
 use azalea_protocol::packets::{Packet, ProtocolPacket};
-use azalea_protocol::read::{ReadPacketError, deserialize_packet, read_raw_packet};
+use azalea_protocol::read::{
+    FrameSplitterError, ReadPacketError, deserialize_packet, read_raw_packet_from_buffer,
+};
 use azalea_protocol::write::{serialize_packet, write_raw_packet};
-use tokio::io::{ReadHalf, SimplexStream, WriteHalf};
+use tokio::io::{AsyncReadExt, ReadHalf, SimplexStream, WriteHalf};
 use tokio::net::TcpStream;
 
 use super::stream::{NetReader, NetWriter};
@@ -37,6 +39,12 @@ pub struct RawWriter {
     enc_cipher: Option<Aes128CfbEnc>,
 }
 
+/// Maximum encoded frame payload accepted from the wire.
+///
+/// This is deliberately smaller than the protocol's decompressed-packet cap:
+/// compressed input must be bounded before it can be buffered or inflated.
+pub const MAX_FRAME_LENGTH: usize = 2 * 1024 * 1024;
+
 /// Held as two fields rather than behind accessors so the game loop can read
 /// and write in one `select!` on disjoint borrows.
 pub struct Conn {
@@ -46,17 +54,64 @@ pub struct Conn {
 
 impl RawReader {
     /// Reads one frame, decrypted and decompressed.
-    // TODO: no maximum frame length, so a hostile length prefix buffers without
-    // bound. Inherited from azalea's framing; cap it if framing moves here.
     pub async fn read(&mut self) -> Result<Box<[u8]>, Box<ReadPacketError>> {
-        read_raw_packet(
-            &mut self.stream,
-            &mut self.buffer,
-            self.compression_threshold,
-            &mut self.dec_cipher,
-        )
-        .await
+        loop {
+            if let Some(length) = frame_length(&self.buffer)?
+                && length > MAX_FRAME_LENGTH
+            {
+                return Err(Box::new(ReadPacketError::FrameSplitter {
+                    source: FrameSplitterError::BadLength {
+                        max: MAX_FRAME_LENGTH,
+                        size: length,
+                    },
+                }));
+            }
+
+            if let Some(frame) = read_raw_packet_from_buffer::<NetReader>(
+                &mut self.buffer,
+                self.compression_threshold,
+            )? {
+                return Ok(frame);
+            }
+            let mut bytes = vec![0; 8192];
+            let count = self
+                .stream
+                .read(&mut bytes)
+                .await
+                .map_err(|source| Box::new(ReadPacketError::IoError { source }))?;
+            if count == 0 {
+                return Err(Box::new(ReadPacketError::ConnectionClosed));
+            }
+            bytes.truncate(count);
+            let mut bytes = bytes.into_boxed_slice();
+            if let Some(cipher) = &mut self.dec_cipher {
+                azalea_crypto::decrypt_packet(cipher, &mut bytes);
+            }
+            self.buffer.get_mut().extend_from_slice(&bytes);
+        }
     }
+}
+
+/// Decode only the outer frame length already buffered by `read_raw_packet`.
+/// Returning `None` keeps fragmented VarInts and frames working as before.
+fn frame_length(buffer: &Cursor<Vec<u8>>) -> Result<Option<usize>, Box<ReadPacketError>> {
+    let bytes = &buffer.get_ref()[buffer.position() as usize..];
+    let mut value = 0usize;
+    for (index, byte) in bytes.iter().copied().enumerate().take(5) {
+        value |= usize::from(byte & 0x7f) << (index * 7);
+        if byte & 0x80 == 0 {
+            return Ok(Some(value));
+        }
+    }
+    if bytes.len() >= 5 {
+        return Err(Box::new(ReadPacketError::FrameSplitter {
+            source: FrameSplitterError::BadLength {
+                max: MAX_FRAME_LENGTH,
+                size: usize::MAX,
+            },
+        }));
+    }
+    Ok(None)
 }
 
 impl RawWriter {
@@ -90,7 +145,7 @@ pub struct MemoryEnd {
 )]
 pub fn memory_pipes() -> (MemoryEnd, MemoryEnd) {
     const TO_CLIENT: usize = 1024 * 1024;
-    const TO_SERVER: usize = 256 * 1024;
+    const TO_SERVER: usize = 1024 * 1024;
 
     let (client_rx, server_tx) = tokio::io::simplex(TO_CLIENT);
     let (server_rx, client_tx) = tokio::io::simplex(TO_SERVER);
@@ -168,7 +223,7 @@ mod tests {
     use azalea_protocol::packets::status::ServerboundStatusPacket;
     use azalea_protocol::packets::status::s_ping_request::ServerboundPingRequest;
     use azalea_protocol::packets::status::s_status_request::ServerboundStatusRequest;
-    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    use tokio::io::AsyncWriteExt as _;
 
     use super::*;
 
@@ -246,5 +301,20 @@ mod tests {
         for _ in 0..2 {
             assert_eq!(recv(&mut conn).await, status_request());
         }
+    }
+
+    #[tokio::test]
+    async fn oversized_frame_is_rejected_before_payload_is_buffered() {
+        let (mut conn, _wire_rx, mut peer_tx) = conn_and_wire();
+        // VarInt encoding of MAX_FRAME_LENGTH + 1, fragmented across writes.
+        peer_tx.write_all(&[0x81]).await.unwrap();
+        peer_tx.write_all(&[0x80, 0x80, 0x01]).await.unwrap();
+
+        let error = conn.reader.read().await.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Packet is longer than 2097152 bytes")
+        );
     }
 }

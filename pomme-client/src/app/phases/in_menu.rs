@@ -125,6 +125,27 @@ pub fn update_menu(
 
             return MenuUpdateResult::Connect { connect_args };
         }
+        MenuAction::PlayWorld { save_path, seed } => {
+            core.audio.stop_menu_music();
+            #[cfg(feature = "singleplayer")]
+            {
+                let transport = core.launch_singleplayer(save_path, seed);
+                let connect_args = ConnectArgs {
+                    transport,
+                    username: core.user.username.clone(),
+                    uuid: core.user.uuid,
+                    access_token: core.user.access_token.clone(),
+                    view_distance: core.menu.render_distance as u8,
+                };
+                return MenuUpdateResult::Connect { connect_args };
+            }
+            #[cfg(not(feature = "singleplayer"))]
+            {
+                let _ = (save_path, seed);
+                core.menu
+                    .show_disconnect("Singleplayer support is disabled in this build".into());
+            }
+        }
         MenuAction::ChangeTheme(theme) => {
             gfx.renderer
                 .reload_panorama(&theme.panorama_dir(&core.data_dirs));

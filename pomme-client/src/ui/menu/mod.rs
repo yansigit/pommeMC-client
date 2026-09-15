@@ -282,6 +282,11 @@ pub enum MenuAction {
         /// From the entry's ping, when joining out of the server list.
         protocol: Option<i32>,
     },
+    /// Start a local world through the same Java protocol path as multiplayer.
+    PlayWorld {
+        save_path: PathBuf,
+        seed: i64,
+    },
     ChangeTheme(PanoramaTheme),
     Quit,
 }

@@ -288,13 +288,35 @@ impl MainMenu {
             );
         };
 
-        unavailable(
+        if push_button_f(
             &mut elements,
             &mut ctx,
             &mut any_hovered,
-            [grid_x, row1_y, wide_w, btn_h],
+            cursor,
+            clicked,
+            grid_x,
+            row1_y,
+            wide_w,
+            btn_h,
+            gs,
             "Play Selected World",
-        );
+            has_sel,
+        ) && let Some(folder) = self.selected_world.clone()
+            && let Some(world) = self.world_list.get(&folder)
+        {
+            // Keep the path in the action. The menu owns the saves directory,
+            // while AppCore owns the server lifecycle.
+            return MainMenuResult {
+                elements,
+                action: MenuAction::PlayWorld {
+                    save_path: self.saves_dir.join(folder),
+                    seed: crate::ui::world_list::parse_seed(&world.seed).unwrap_or(0),
+                },
+                cursor_pointer: any_hovered,
+                blur: 2.0,
+                clicked_button: true,
+            };
+        }
         if push_button_f(
             &mut elements,
             &mut ctx,

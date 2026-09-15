@@ -47,6 +47,10 @@ pub struct LocalPlayer {
     pub look_dir: LookDirection,
     pub prev_look_dir: LookDirection,
     pub on_ground: bool,
+    /// Downward distance accumulated since the last grounded or fluid tick.
+    /// Damage remains server-authoritative because this client has no local
+    /// damage event pipeline.
+    pub fall_distance: f64,
     pub health: f32,
     pub death_time: u32,
     pub absorption: f32,
@@ -116,6 +120,7 @@ impl LocalPlayer {
             look_dir: LookDirection::default(),
             prev_look_dir: LookDirection::default(),
             on_ground: false,
+            fall_distance: 0.0,
             health: 20.0,
             death_time: 0,
             absorption: 0.0,

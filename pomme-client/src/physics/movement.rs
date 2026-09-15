@@ -1,6 +1,5 @@
-// TODO: fall damage - track fall distance, reset on water entry, apply damage
-// on ground impact; Player.causeFallDamage returns false when may_fly, and
-// fall distance resets every tick while flying
+// Fall distance is tracked below for vanilla movement state. Damage remains
+// server-authoritative until the client has a local damage event pipeline.
 
 use glam::{DVec3, dvec3};
 use winit::keyboard::KeyCode;
@@ -55,6 +54,7 @@ pub fn tick(
     use_speed_multiplier: f64,
     slow_due_to_using_item: bool,
 ) {
+    let start_y = player.position.y;
     let jump_held = input.performing_action(input::Action::Jump);
 
     // Vanilla `LivingEntity.aiStep`.
@@ -143,6 +143,8 @@ pub fn tick(
         );
     }
 
+    update_fall_distance(player, player.position.y - start_y);
+
     player.tick_air_supply();
 
     // Touching down cancels flight, even in creative.
@@ -169,6 +171,7 @@ pub fn tick_dead(player: &mut LocalPlayer, chunk_store: &ChunkStore) {
     let height = player.height();
     let eye_height = player.target_eye_height();
 
+    let start_y = player.position.y;
     let neutral = InputState::released();
     player.update_water_state_for_dimensions(chunk_store, half_width, height, eye_height);
     player.tick_eye_height();
@@ -178,6 +181,8 @@ pub fn tick_dead(player: &mut LocalPlayer, chunk_store: &ChunkStore) {
     } else {
         tick_land(player, &neutral, chunk_store, 0.0, 0.0, half_width, height);
     }
+
+    update_fall_distance(player, player.position.y - start_y);
 
     // Player.updatePlayerPose runs after LivingEntity.tick in vanilla. With
     // death-screen input released, this becomes standing unless clearance keeps
@@ -190,6 +195,20 @@ pub fn tick_dead(player: &mut LocalPlayer, chunk_store: &ChunkStore) {
     }
     player.was_forward_pressed = false;
     player.was_jump_pressed = false;
+}
+
+/// Tracks the vanilla `LivingEntity.fallDistance` input without applying local
+/// damage. The server remains authoritative for damage and landing effects.
+fn update_fall_distance(player: &mut LocalPlayer, vertical_delta: f64) {
+    if player.flying || player.in_water {
+        player.fall_distance = 0.0;
+    } else if player.on_ground {
+        // Include the final clipped downward movement in the completed fall,
+        // then clear the accumulator for the next fall.
+        player.fall_distance = 0.0;
+    } else if vertical_delta < 0.0 {
+        player.fall_distance += -vertical_delta;
+    }
 }
 
 fn look_sin_cos(player: &LocalPlayer) -> (f64, f64) {
@@ -687,5 +706,39 @@ mod tests {
             !player.sprinting,
             "immobile dead-player input must stop sprinting"
         );
+    }
+
+    #[test]
+    fn fall_distance_accumulates_only_while_descending_in_air() {
+        let mut player = LocalPlayer::new();
+        player.on_ground = false;
+
+        update_fall_distance(&mut player, -1.25);
+        update_fall_distance(&mut player, -0.75);
+        assert!((player.fall_distance - 2.0).abs() < f64::EPSILON);
+
+        update_fall_distance(&mut player, 0.5);
+        assert!((player.fall_distance - 2.0).abs() < f64::EPSILON);
+
+        player.on_ground = true;
+        update_fall_distance(&mut player, -0.01);
+        assert_eq!(player.fall_distance, 0.0);
+    }
+
+    #[test]
+    fn fall_distance_resets_in_water_and_flight() {
+        let mut player = LocalPlayer::new();
+        player.on_ground = false;
+        update_fall_distance(&mut player, -3.0);
+        assert_eq!(player.fall_distance, 3.0);
+
+        player.in_water = true;
+        update_fall_distance(&mut player, -1.0);
+        assert_eq!(player.fall_distance, 0.0);
+
+        player.in_water = false;
+        player.flying = true;
+        update_fall_distance(&mut player, -1.0);
+        assert_eq!(player.fall_distance, 0.0);
     }
 }
