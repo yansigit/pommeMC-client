@@ -84,6 +84,12 @@ fn main() {
         std::process::exit(2);
     }
 
+    #[cfg(not(feature = "singleplayer"))]
+    if args.quick_access_singleplayer {
+        eprintln!("--quick-access-singleplayer requires the singleplayer feature");
+        std::process::exit(2);
+    }
+
     let user = match UserData::from_args(args.username, args.uuid, args.access_token) {
         Ok(user) => user,
         Err(e) => {
@@ -138,6 +144,7 @@ fn main() {
         presence,
         user,
         args.quick_access_multiplayer,
+        args.quick_access_singleplayer,
         args.capture_first_frame,
         args.capture_gameplay_frame,
         args.exit_after_screenshot,

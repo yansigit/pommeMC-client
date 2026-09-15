@@ -30,6 +30,10 @@ pub struct LaunchArgs {
     #[arg(long)]
     pub quick_access_multiplayer: Option<String>,
 
+    /// Start a fresh integrated singleplayer world without menu input.
+    #[arg(long, conflicts_with = "quick_access_multiplayer")]
+    pub quick_access_singleplayer: bool,
+
     /// Capture the first rendered frame to the normal screenshots directory.
     /// Useful for automated renderer smoke tests without synthetic key input.
     #[arg(long)]

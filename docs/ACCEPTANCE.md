@@ -46,14 +46,22 @@ cargo run -p pomme-client -- \
   --quick-access-multiplayer 127.0.0.1:25565 \
   --capture-gameplay-frame \
   --exit-after-screenshot
+
+# Starts SteelMC in-process and captures a fully loaded singleplayer frame.
+# Use a temporary --game-dir in CI to discard the generated world afterward.
+cargo run -p pomme-client -- \
+  --quick-access-singleplayer \
+  --capture-gameplay-frame \
+  --exit-after-screenshot
 ```
 
 Captures are written to `<game directory>/screenshots` using the normal F2
 readback path. The first command validates window creation, asset loading,
 GPU rendering, presentation, and PNG readback without starting a world. The
-second also needs a server and validates the loaded-world render boundary, but
-neither command proves pixel parity or general gameplay. Review the PNG or
-compare it with a platform-specific baseline separately.
+multiplayer command needs a server. The singleplayer command starts SteelMC
+in-process and validates the loaded-world render boundary without menu input,
+but neither gameplay command proves pixel parity or general gameplay. Review
+the PNG or compare it with a platform-specific baseline separately.
 
 The CLI rejects names outside Minecraft's 3-16 character ASCII grammar before
 the login packet is sent. For example, the former `VisualAcceptance2` test name

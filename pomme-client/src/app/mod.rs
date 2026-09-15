@@ -116,6 +116,7 @@ impl App {
         presence: Option<crate::discord::DiscordPresence>,
         user: UserData,
         quick_access_multiplayer: Option<String>,
+        quick_access_singleplayer: bool,
         capture_first_frame: bool,
         capture_gameplay_frame: bool,
         exit_after_screenshot: bool,
@@ -123,6 +124,7 @@ impl App {
         Self {
             phase: StateSlot::new(AppPhase::Setup {
                 quick_access_multiplayer,
+                quick_access_singleplayer,
                 pending_skin_uuid: user.has_profile.then_some(user.uuid),
             }),
             core: AppCore::new(version, data_dirs, tokio_rt, presence, user),
@@ -160,6 +162,7 @@ impl ApplicationHandler for App {
         self.phase.transition(|app| match app {
             AppPhase::Setup {
                 quick_access_multiplayer,
+                quick_access_singleplayer,
                 mut pending_skin_uuid,
             } => {
                 let window_icon = {
@@ -190,6 +193,7 @@ impl ApplicationHandler for App {
                         event_loop.exit();
                         return AppPhase::Setup {
                             quick_access_multiplayer,
+                            quick_access_singleplayer,
                             pending_skin_uuid,
                         };
                     }
@@ -209,6 +213,7 @@ impl ApplicationHandler for App {
                         event_loop.exit();
                         return AppPhase::Setup {
                             quick_access_multiplayer,
+                            quick_access_singleplayer,
                             pending_skin_uuid,
                         };
                     }
@@ -266,6 +271,52 @@ impl ApplicationHandler for App {
                         connect_phase: ConnectionPhase::Connecting,
                         connection,
                         game,
+                    }
+                } else if quick_access_singleplayer {
+                    #[cfg(feature = "singleplayer")]
+                    {
+                        let save_path = self
+                            .core
+                            .data_dirs
+                            .game_dir
+                            .join("saves")
+                            .join("pomme-automated");
+                        let transport = self.core.launch_singleplayer(save_path, 1);
+                        let connection = spawn_connection(
+                            &self.core.tokio_rt,
+                            ConnectArgs {
+                                transport,
+                                username: self.core.user.username.clone(),
+                                uuid: self.core.user.uuid,
+                                access_token: self.core.user.access_token.clone(),
+                                view_distance: self.core.menu.render_distance as u8,
+                            },
+                        );
+
+                        let game = GameState::new(
+                            &renderer,
+                            &self.core.resource_packs,
+                            self.core.menu.render_distance,
+                        );
+
+                        let gfx = Gfx {
+                            renderer: ManuallyDrop::new(renderer),
+                            window,
+                            last_frame: Instant::now(),
+                            fps_counter: FpsCounter::new(),
+                        };
+
+                        AppPhase::Connecting {
+                            gfx,
+                            panorama: Panorama::new(),
+                            connect_phase: ConnectionPhase::Connecting,
+                            connection,
+                            game,
+                        }
+                    }
+                    #[cfg(not(feature = "singleplayer"))]
+                    {
+                        unreachable!("main rejects quick singleplayer without the feature")
                     }
                 } else {
                     let gfx = Gfx {

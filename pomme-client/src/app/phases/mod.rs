@@ -99,6 +99,7 @@ pub enum ConnectionPhase {
 pub enum AppPhase {
     Setup {
         quick_access_multiplayer: Option<String>,
+        quick_access_singleplayer: bool,
         pending_skin_uuid: Option<uuid::Uuid>,
     },
     InMenu {
