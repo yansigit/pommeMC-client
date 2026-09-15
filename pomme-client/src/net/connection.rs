@@ -13,7 +13,7 @@ use azalea_protocol::packets::login::{ClientboundLoginPacket, ServerboundLoginPa
 use azalea_protocol::read::{ReadPacketError, deserialize_packet};
 use crossbeam_channel::Sender;
 use thiserror::Error;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use super::NetworkEvent;
 use super::conn::{Conn, MemoryEnd, RawWriter};
@@ -52,6 +52,52 @@ pub enum ConnectionError {
 
     #[error("joining {0} servers is not supported yet")]
     Unjoinable(String),
+}
+
+enum WriterRequest {
+    Frame(Vec<u8>),
+    Stop(oneshot::Sender<RawWriter>),
+}
+
+fn spawn_writer(
+    mut writer: RawWriter,
+) -> (
+    mpsc::UnboundedSender<WriterRequest>,
+    mpsc::UnboundedReceiver<ConnectionError>,
+) {
+    let (request_tx, mut request_rx) = mpsc::unbounded_channel();
+    let (error_tx, error_rx) = mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        while let Some(request) = request_rx.recv().await {
+            match request {
+                WriterRequest::Frame(frame) => {
+                    if let Err(error) = writer.write(&frame).await {
+                        let _ = error_tx.send(ConnectionError::Write(error));
+                        return;
+                    }
+                }
+                WriterRequest::Stop(return_writer) => {
+                    let _ = return_writer.send(writer);
+                    return;
+                }
+            }
+        }
+    });
+    (request_tx, error_rx)
+}
+
+async fn stop_writer(
+    writer_tx: &mpsc::UnboundedSender<WriterRequest>,
+    writer_error_rx: &mut mpsc::UnboundedReceiver<ConnectionError>,
+) -> Result<RawWriter, ConnectionError> {
+    let (return_tx, return_rx) = oneshot::channel();
+    writer_tx
+        .send(WriterRequest::Stop(return_tx))
+        .map_err(|_| ConnectionError::Write(std::io::Error::other("writer task stopped")))?;
+    tokio::select! {
+        writer = return_rx => writer.map_err(|_| ConnectionError::Write(std::io::Error::other("writer task stopped"))),
+        Some(error) = writer_error_rx.recv() => Err(error),
+    }
 }
 
 impl From<super::resolve::ConnectError> for ConnectionError {
@@ -848,13 +894,14 @@ async fn game_loop(
         );
         write_game_frame(&mut conn.writer, translation, serialize_frame(&brand)?).await?;
     }
+
+    let Conn { reader, writer } = conn;
+    let mut reader = reader;
+    let (mut writer_tx, mut writer_error_rx) = spawn_writer(writer);
     loop {
         let raw = if let Some(raw) = deferred_login.take() {
             Ok(raw)
         } else {
-            // TODO: reads and writes share this task, so a blocked write stops
-            // the client reading. Harmless against a socket, but an integrated
-            // server on a bounded pipe can deadlock; split the writer out.
             tokio::select! {
                 Some(out) = outbound_rx.recv() => {
                     let frame = match out {
@@ -866,10 +913,19 @@ async fn game_loop(
                         }
                         Outbound::Raw(bytes) => bytes,
                     };
-                    write_game_frame(&mut conn.writer, translation, frame).await?;
+                    let frames = match translation {
+                        Some(t) if t.translates_outbound() => t.translate_outbound_game_frame(frame),
+                        _ => vec![frame],
+                    };
+                    for frame in frames {
+                        writer_tx
+                            .send(WriterRequest::Frame(frame))
+                            .map_err(|_| ConnectionError::Write(std::io::Error::other("writer task stopped")))?;
+                    }
                     continue;
                 }
-                raw = conn.reader.read() => raw,
+                Some(error) = writer_error_rx.recv() => return Err(error),
+                raw = reader.read() => raw,
             }
         };
         let raw = match raw {
@@ -896,12 +952,15 @@ async fn game_loop(
                     // (ClientPacketListener.handleConfigurationStart); chat
                     // survives the transition.
                     let _ = event_tx.try_send(NetworkEvent::Reconfiguring);
+                    let writer = stop_writer(&writer_tx, &mut writer_error_rx).await?;
+                    let mut config_conn = Conn { reader, writer };
                     let ack = ServerboundGamePacket::ConfigurationAcknowledged(
                         azalea_protocol::packets::game::s_configuration_acknowledged::ServerboundConfigurationAcknowledged,
                     );
-                    write_game_frame(&mut conn.writer, translation, serialize_frame(&ack)?).await?;
+                    write_game_frame(&mut config_conn.writer, translation, serialize_frame(&ack)?)
+                        .await?;
                     let holder = config_sequence(
-                        &mut conn,
+                        &mut config_conn,
                         view_distance,
                         event_tx,
                         &mut outbound_rx,
@@ -916,6 +975,12 @@ async fn game_loop(
                             colors: extract_biome_climate(&registry_holder),
                         });
                     }
+                    let Conn {
+                        reader: next_reader,
+                        writer,
+                    } = config_conn;
+                    reader = next_reader;
+                    (writer_tx, writer_error_rx) = spawn_writer(writer);
                     continue;
                 }
                 if let Some(t) = translation
@@ -1150,5 +1215,40 @@ mod tests {
         assert!(matches!(events[1], NetworkEvent::Connected));
 
         client.abort();
+    }
+
+    #[tokio::test]
+    async fn blocked_writer_does_not_stop_peer_reads() {
+        use tokio::time::{Duration, timeout};
+
+        use crate::net::conn::memory_pipes;
+
+        let (client_end, server_end) = memory_pipes();
+        let mut client = Conn::from_memory(client_end);
+        let mut server = Conn::from_memory(server_end);
+        let (writer_tx, mut writer_error_rx) = spawn_writer(client.writer);
+
+        // Fill the writer's bounded pipe without reading it from the server
+        // side. The writer task will eventually await backpressure here.
+        for _ in 0..128 {
+            writer_tx
+                .send(WriterRequest::Frame(vec![0; 64 * 1024]))
+                .unwrap();
+        }
+        tokio::task::yield_now().await;
+
+        // A game loop must still receive server traffic while that write is
+        // blocked. A one-byte raw frame is enough to exercise the read half.
+        server.writer.write(&[0]).await.unwrap();
+        let read = timeout(Duration::from_millis(250), client.reader.read())
+            .await
+            .expect("reader was blocked by the writer")
+            .unwrap();
+        assert_eq!(&read[..], &[0]);
+
+        // Close the peer's read half so the blocked writer exits cleanly.
+        drop(server.reader);
+        drop(writer_tx);
+        let _ = timeout(Duration::from_millis(250), writer_error_rx.recv()).await;
     }
 }
