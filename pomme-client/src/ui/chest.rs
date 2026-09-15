@@ -178,6 +178,7 @@ pub fn build_hopper(
         clicked_outside,
         ops,
         button: None,
+        beacon: None,
     }
 }
 
@@ -234,5 +235,6 @@ fn build_contents(
         clicked_outside,
         ops,
         button: None,
+        beacon: None,
     }
 }

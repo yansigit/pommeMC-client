@@ -31,6 +31,9 @@ pub struct ContainerResult {
     /// Menu button clicked this frame (`ServerboundContainerButtonClick`),
     /// e.g. an enchantment option.
     pub button: Option<u32>,
+    /// Beacon effect selection clicked this frame. This uses the dedicated
+    /// `ServerboundSetBeacon` packet rather than a container button packet.
+    pub beacon: Option<(Option<u32>, Option<u32>)>,
 }
 
 /// Input for a container screen this frame.

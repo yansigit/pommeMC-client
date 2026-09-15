@@ -49,6 +49,8 @@ pub enum ContainerScreen {
     Furnace(crate::ui::furnace::FurnaceVariant),
     Chest { rows: u8 },
     Hopper,
+    Brewing,
+    Beacon,
     ShulkerBox,
     Anvil,
     Enchantment,
@@ -62,6 +64,8 @@ impl ContainerScreen {
             Self::Furnace(_) => ContainerKind::Furnace,
             Self::Chest { rows } => ContainerKind::Chest { rows },
             Self::Hopper => ContainerKind::Hopper,
+            Self::Brewing => ContainerKind::Brewing,
+            Self::Beacon => ContainerKind::Beacon,
             Self::ShulkerBox => ContainerKind::ShulkerBox,
             Self::Anvil => ContainerKind::Anvil,
             Self::Enchantment => ContainerKind::Enchantment,
@@ -86,6 +90,10 @@ pub struct OpenContainer {
     pub anvil: Option<crate::ui::anvil::AnvilState>,
     /// The book animation's state; Some only for the enchantment screen.
     pub enchant: Option<crate::ui::enchantment::EnchantState>,
+    /// Locally selected beacon effects. The server remains authoritative and
+    /// may reject a selection based on beacon tier or payment.
+    pub beacon_primary: Option<u32>,
+    pub beacon_secondary: Option<u32>,
     /// This menu's latest server state id, echoed in container clicks.
     pub state_id: u32,
 }
@@ -2368,6 +2376,7 @@ pub fn update_game(
             throw: keys_live && core.input.key_just_pressed(winit::keyboard::KeyCode::KeyQ),
             throw_all: core.input.ctrl_held(),
         };
+        let mut beacon_selection = None;
         // The anvil rename field consumes this frame's typing; a changed
         // accepted name goes to the server (vanilla `onNameChanged`).
         if let Some(c) = &mut game.open_container
@@ -2442,6 +2451,45 @@ pub fn update_game(
                     &mut game.inv_last_click,
                     gs,
                 ),
+                ContainerScreen::Brewing => crate::ui::brewing::build_brewing(
+                    &mut elements,
+                    sw,
+                    sh,
+                    core.input.cursor_pos(),
+                    &input,
+                    &container.slots,
+                    &container.data,
+                    &container.title,
+                    &game.cursor_item,
+                    &mut game.inv_drag,
+                    &mut game.inv_last_click,
+                    gs,
+                ),
+                ContainerScreen::Beacon => {
+                    let result = crate::ui::beacon::build_beacon(
+                        &mut elements,
+                        sw,
+                        sh,
+                        core.input.cursor_pos(),
+                        &input,
+                        &container.slots,
+                        &container.title,
+                        container.beacon_primary,
+                        container.beacon_secondary,
+                        &game.cursor_item,
+                        &mut game.inv_drag,
+                        &mut game.inv_last_click,
+                        gs,
+                    );
+                    if let Some((primary, secondary)) = result.beacon {
+                        beacon_selection = Some((primary, secondary));
+                        use azalea_protocol::packets::game::s_set_beacon::ServerboundSetBeacon;
+                        connection.packet_tx.send(ServerboundGamePacket::SetBeacon(
+                            ServerboundSetBeacon { primary, secondary },
+                        ));
+                    }
+                    result
+                }
                 ContainerScreen::ShulkerBox => crate::ui::chest::build_shulker_box(
                     &mut elements,
                     sw,
@@ -2530,6 +2578,12 @@ pub fn update_game(
             player_preview = Some(result.player_preview);
             (result.clicked_outside, result.ops)
         };
+        if let Some((primary, secondary)) = beacon_selection
+            && let Some(container) = &mut game.open_container
+        {
+            container.beacon_primary = primary;
+            container.beacon_secondary = secondary;
+        }
         close_inventory = clicked_outside;
         send_container_clicks(game, connection, ops);
         core.input.clear_just_pressed_actions();

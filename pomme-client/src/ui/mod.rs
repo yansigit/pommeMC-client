@@ -1,5 +1,7 @@
 pub mod anvil;
+pub mod beacon;
 pub mod boss_bar;
+pub mod brewing;
 pub mod chat;
 pub mod chest;
 pub mod common;

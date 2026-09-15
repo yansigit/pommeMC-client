@@ -15,7 +15,8 @@ use azalea_registry::builtin::ItemKind;
 /// Which container menu a click applies to. `Furnace` covers the furnace,
 /// blast furnace, and smoker menus, which share the same slot structure;
 /// `Chest` covers every generic 9xN menu (chests, ender chests, barrels, ...).
-/// `Hopper` covers the five-slot hopper menu.
+/// `Hopper` covers the five-slot hopper menu. Brewing and beacon menus use the
+/// same server-authoritative click path with their vanilla slot layouts.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ContainerKind {
     Player,
@@ -23,6 +24,8 @@ pub enum ContainerKind {
     Furnace,
     Chest { rows: u8 },
     Hopper,
+    Brewing,
+    Beacon,
     ShulkerBox,
     Anvil,
     Enchantment,
@@ -35,6 +38,8 @@ impl ContainerKind {
             Self::Furnace | Self::Anvil => 39,
             Self::Chest { rows } => rows as usize * 9 + 36,
             Self::Hopper => 41,
+            Self::Brewing => 41,
+            Self::Beacon => 37,
             Self::ShulkerBox => 63,
             Self::Enchantment => 38,
         }
@@ -48,6 +53,8 @@ impl ContainerKind {
             Self::Furnace | Self::Anvil => 3,
             Self::Chest { rows } => rows as usize * 9,
             Self::Hopper => 5,
+            Self::Brewing => 5,
+            Self::Beacon => 1,
             Self::ShulkerBox => 27,
             Self::Enchantment => 2,
         }
@@ -66,6 +73,8 @@ impl ContainerKind {
             Self::Furnace
             | Self::Chest { .. }
             | Self::Hopper
+            | Self::Brewing
+            | Self::Beacon
             | Self::ShulkerBox
             | Self::Enchantment => None,
         }
@@ -138,6 +147,16 @@ impl ContainerKind {
                 contents: SlotList::default(),
                 player: SlotList::default(),
             },
+            Self::Brewing => Menu::BrewingStand {
+                bottles: SlotList::default(),
+                ingredient: ItemStack::Empty,
+                fuel: ItemStack::Empty,
+                player: SlotList::default(),
+            },
+            Self::Beacon => Menu::Beacon {
+                payment: ItemStack::Empty,
+                player: SlotList::default(),
+            },
             Self::ShulkerBox => Menu::ShulkerBox {
                 contents: SlotList::default(),
                 player: SlotList::default(),
@@ -184,6 +203,21 @@ impl ContainerKind {
                 !crate::player::inventory::item_resource_name(item.kind).ends_with("shulker_box")
             }
             (Self::Enchantment, 1) => item.kind == ItemKind::LapisLazuli,
+            (Self::Beacon, 0) => matches!(
+                crate::player::inventory::item_resource_name(item.kind).as_str(),
+                "iron_ingot" | "gold_ingot" | "diamond" | "emerald" | "netherite_ingot"
+            ),
+            (Self::Brewing, 0..=2) => matches!(
+                crate::player::inventory::item_resource_name(item.kind).as_str(),
+                "glass_bottle" | "potion" | "splash_potion" | "lingering_potion"
+            ),
+            (Self::Brewing, 4) => {
+                crate::player::inventory::item_resource_name(item.kind) == "blaze_powder"
+            }
+            (Self::Brewing, 3) => !matches!(
+                crate::player::inventory::item_resource_name(item.kind).as_str(),
+                "glass_bottle" | "potion" | "splash_potion" | "lingering_potion"
+            ),
             _ => true,
         }
     }
@@ -492,6 +526,32 @@ fn quick_move(kind: ContainerKind, menu: &mut Menu, s: usize) {
             ContainerKind::Furnace => {
                 move_item_stack_to(kind, menu, s, 3..menu.len(), s == 2);
             }
+            ContainerKind::Brewing => {
+                if s < 5 {
+                    move_item_stack_to(kind, menu, s, 5..menu.len(), false);
+                } else {
+                    let item = menu.slot(s).and_then(ItemStack::as_present);
+                    let name = item.map(|d| crate::player::inventory::item_resource_name(d.kind));
+                    let range = if name.as_deref() == Some("blaze_powder") {
+                        4..5
+                    } else if matches!(
+                        name.as_deref(),
+                        Some("glass_bottle" | "potion" | "splash_potion" | "lingering_potion")
+                    ) {
+                        0..3
+                    } else {
+                        3..4
+                    };
+                    move_item_stack_to(kind, menu, s, range, false);
+                }
+            }
+            ContainerKind::Beacon => {
+                if s == 0 {
+                    move_item_stack_to(kind, menu, s, 1..menu.len(), false);
+                } else {
+                    move_item_stack_to(kind, menu, s, 0..1, false);
+                }
+            }
             ContainerKind::Enchantment => {
                 // Vanilla `EnchantmentMenu.quickMoveStack`: menu slots go to
                 // the player region; lapis fills its slot; anything else moves
@@ -531,6 +591,22 @@ mod tests {
         assert_eq!(ContainerKind::Hopper.inv_start(), 5);
         assert_eq!(ContainerKind::Hopper.hotbar_menu_slot(0), 32);
         assert_eq!(ContainerKind::Hopper.hotbar_menu_slot(8), 40);
+    }
+
+    #[test]
+    fn brewing_uses_three_bottles_ingredient_and_fuel() {
+        assert_eq!(ContainerKind::Brewing.slot_count(), 41);
+        assert_eq!(ContainerKind::Brewing.inv_start(), 5);
+        assert_eq!(ContainerKind::Brewing.hotbar_menu_slot(0), 32);
+        assert_eq!(ContainerKind::Brewing.hotbar_menu_slot(8), 40);
+    }
+
+    #[test]
+    fn beacon_uses_one_payment_slot_before_player_inventory() {
+        assert_eq!(ContainerKind::Beacon.slot_count(), 37);
+        assert_eq!(ContainerKind::Beacon.inv_start(), 1);
+        assert_eq!(ContainerKind::Beacon.hotbar_menu_slot(0), 28);
+        assert_eq!(ContainerKind::Beacon.hotbar_menu_slot(8), 36);
     }
 }
 
