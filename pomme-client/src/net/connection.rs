@@ -1862,7 +1862,10 @@ mod tests {
                 loop {
                     while let Ok(event) = connection.event_rx.try_recv() {
                         match event {
-                            NetworkEvent::TimeUpdate { .. } => return,
+                            NetworkEvent::TimeUpdate { .. } => {
+                                trace.push("TimeUpdate".into());
+                                return;
+                            }
                             NetworkEvent::Disconnected { reason } => {
                                 panic!(
                                     "integrated server disconnected after PlayerLoaded: {reason}; \
@@ -1884,6 +1887,25 @@ mod tests {
             drop(startup);
             drop(pending);
             assert!(world.0.join("minecraft").is_dir());
+            trace.push("WorldSaved".into());
+
+            let result = serde_json::json!({
+                "schema": 1,
+                "scenario": "integrated-server-gameplay",
+                "protocol": LATEST.protocol,
+                "checkpoints": trace,
+                "world_saved": true,
+            });
+            println!("POMME_ACCEPTANCE_TRACE={result}");
+            if let Some(path) = std::env::var_os("POMME_ACCEPTANCE_TRACE_FILE") {
+                let path = std::path::PathBuf::from(path);
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent)
+                        .expect("acceptance trace directory should be writable");
+                }
+                fs::write(&path, serde_json::to_vec_pretty(&result).unwrap())
+                    .expect("acceptance trace should be writable");
+            }
         });
     }
 }
