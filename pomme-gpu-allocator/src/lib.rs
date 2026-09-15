@@ -4,6 +4,11 @@
 //!
 //! ```no_run
 //! use pomme_gpu_allocator::vulkan::*;
+//! use pyronyx::vk;
+//!
+//! # let instance = unsafe { std::mem::zeroed::<vk::Instance>() };
+//! # let device = unsafe { std::mem::zeroed::<vk::Device>() };
+//! # let physical_device = unsafe { std::mem::zeroed::<vk::PhysicalDevice>() };
 //!
 //! let mut allocator = Allocator::new(&AllocatorCreateDesc {
 //!     instance,
@@ -23,11 +28,24 @@
 //! use pomme_gpu_allocator::vulkan::*;
 //! use pyronyx::vk;
 //!
+//! # let instance = unsafe { std::mem::zeroed::<vk::Instance>() };
+//! # let device = unsafe { std::mem::zeroed::<vk::Device>() };
+//! # let physical_device = unsafe { std::mem::zeroed::<vk::PhysicalDevice>() };
+//! # let mut allocator = Allocator::new(&AllocatorCreateDesc {
+//! #     instance,
+//! #     device: device.clone(),
+//! #     physical_device,
+//! #     debug_settings: Default::default(),
+//! #     buffer_device_address: true,
+//! #     allocation_sizes: Default::default(),
+//! # })
+//! # .unwrap();
+//!
 //! let buffer = unsafe {
 //!     device.create_buffer(
 //!         &vk::BufferCreateInfo {
 //!             size: 512,
-//!             usage: vk::BufferUsageFlags::STORAGE_BUFFER,
+//!             usage: vk::BufferUsageFlags::StorageBuffer,
 //!             ..Default::default()
 //!         },
 //!         None,
