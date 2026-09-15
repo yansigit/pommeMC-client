@@ -29,4 +29,13 @@ pub struct LaunchArgs {
 
     #[arg(long)]
     pub quick_access_multiplayer: Option<String>,
+
+    /// Capture the first rendered frame to the normal screenshots directory.
+    /// Useful for automated renderer smoke tests without synthetic key input.
+    #[arg(long)]
+    pub capture_first_frame: bool,
+
+    /// Capture the first fully loaded gameplay frame after joining a server.
+    #[arg(long)]
+    pub capture_gameplay_frame: bool,
 }

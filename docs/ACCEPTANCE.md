@@ -30,6 +30,28 @@ stonecutter slot layouts, plus creative-mode item dropping. These checks prove
 wire/menu routing and compilation, but they do not replace click-through tests
 against a live vanilla server.
 
+## Non-interactive graphics smoke checks
+
+The client can capture a rendered frame without sending synthetic mouse or
+keyboard input:
+
+```sh
+# Initializes Vulkan, renders the title screen, and writes a PNG.
+cargo run -p pomme-client -- --capture-first-frame
+
+# With a reachable server, captures the first fully loaded gameplay frame.
+cargo run -p pomme-client -- \
+  --quick-access-multiplayer 127.0.0.1:25565 \
+  --capture-gameplay-frame
+```
+
+Captures are written to `<game directory>/screenshots` using the normal F2
+readback path. The first command validates window creation, asset loading,
+GPU rendering, presentation, and PNG readback without starting a world. The
+second also needs a server and validates the loaded-world render boundary, but
+neither command proves pixel parity or general gameplay. Review the PNG or
+compare it with a platform-specific baseline separately.
+
 ## Required server-backed scenarios
 
 The following scenarios remain required for a validated release tier:

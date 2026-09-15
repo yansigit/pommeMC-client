@@ -47,6 +47,8 @@ pub struct App {
     core: AppCore,
     occluded: bool,
     fps_limiter: FramerateLimiter,
+    capture_first_frame: bool,
+    capture_gameplay_frame: bool,
 }
 
 /// Port of vanilla `FramerateLimiter`: paces to a target fps by sleeping most
@@ -113,6 +115,8 @@ impl App {
         presence: Option<crate::discord::DiscordPresence>,
         user: UserData,
         quick_access_multiplayer: Option<String>,
+        capture_first_frame: bool,
+        capture_gameplay_frame: bool,
     ) -> Self {
         Self {
             phase: StateSlot::new(AppPhase::Setup {
@@ -122,6 +126,8 @@ impl App {
             core: AppCore::new(version, data_dirs, tokio_rt, presence, user),
             occluded: false,
             fps_limiter: FramerateLimiter::new(),
+            capture_first_frame,
+            capture_gameplay_frame,
         }
     }
 
@@ -204,6 +210,11 @@ impl ApplicationHandler for App {
                         };
                     }
                 };
+
+                if self.capture_first_frame {
+                    renderer.request_screenshot();
+                    self.capture_first_frame = false;
+                }
 
                 if let Some(p) = &mut self.core.presence {
                     p.set_in_menu(&self.core.version);
@@ -548,6 +559,7 @@ impl ApplicationHandler for App {
                 };
 
                 let core = &mut self.core;
+                let capture_gameplay_frame = self.capture_gameplay_frame;
 
                 let should_apply_cursor_grab = core.input.update(&mut self.phase);
                 if should_apply_cursor_grab
@@ -638,6 +650,9 @@ impl ApplicationHandler for App {
                                 AppPhase::InMenu { gfx, panorama }
                             }
                             ConnectingUpdateResult::JoinGame => {
+                                if capture_gameplay_frame {
+                                    gfx.renderer.request_screenshot();
+                                }
                                 if let Some(p) = &mut core.presence {
                                     p.playing_multiplayer(&core.version);
                                 }
@@ -690,6 +705,10 @@ impl ApplicationHandler for App {
                         }
                     }
                 });
+
+                if capture_gameplay_frame && matches!(self.phase.get(), AppPhase::InGame { .. }) {
+                    self.capture_gameplay_frame = false;
+                }
 
                 core.input.end_frame();
 

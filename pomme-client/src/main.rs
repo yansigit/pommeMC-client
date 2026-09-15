@@ -76,6 +76,14 @@ fn main() {
         }
     }
 
+    let user = match UserData::from_args(args.username, args.uuid, args.access_token) {
+        Ok(user) => user,
+        Err(e) => {
+            eprintln!("Failed to start client: {e}");
+            std::process::exit(1);
+        }
+    };
+
     let data_dirs = dirs::DataDirs::resolve(
         version,
         args.assets_dir.as_deref(),
@@ -111,8 +119,6 @@ fn main() {
             .expect("Failed to create tokio runtime"),
     );
 
-    let user = UserData::from_args(args.username, args.uuid, args.access_token);
-
     let presence = crate::discord::DiscordPresence::start(version)
         .inspect_err(|e| tracing::warn!("Discord rich presence unavailable: {e}"))
         .ok();
@@ -124,6 +130,8 @@ fn main() {
         presence,
         user,
         args.quick_access_multiplayer,
+        args.capture_first_frame,
+        args.capture_gameplay_frame,
     )
     .run()
     {
