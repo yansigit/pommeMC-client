@@ -90,6 +90,15 @@ pub fn tick(
 
     update_fly_state(player, input, sin_y_rot, cos_y_rot);
 
+    if crate::player::is_spectator(player.game_mode) {
+        tick_spectator(player, input);
+        update_fall_distance(player, player.position.y - start_y);
+        player.tick_air_supply();
+        player.was_forward_pressed = forward_pressed;
+        player.was_jump_pressed = jump_held;
+        return;
+    }
+
     if player.flying {
         let mut input_ya = 0.0f32;
         if input.performing_action(input::Action::Sneak) {
@@ -312,6 +321,42 @@ fn ground_slipperiness(player: &LocalPlayer, chunk_store: &ChunkStore) -> f64 {
     let y = (player.position.y - 1.0e-4).floor() as i32;
     let z = player.position.z.floor() as i32;
     crate::world::block::slipperiness(chunk_store.get_block_state(x, y, z))
+}
+
+/// Vanilla spectator travel is a camera move, not `Entity.move`: it ignores
+/// block collision, gravity, crouch edge-clamping, and fluid drag. Forward
+/// follows the full look vector while strafe stays level, matching
+/// `SpectatorInput`'s camera-relative movement.
+fn tick_spectator(player: &mut LocalPlayer, input: &InputState) {
+    let (forward, strafe) = movement_input(input, false);
+    let vertical = if input.performing_action(input::Action::Jump) {
+        1.0
+    } else if input.performing_action(input::Action::Sneak) {
+        -1.0
+    } else {
+        0.0
+    };
+    spectator_move(player, forward, strafe, vertical);
+}
+
+fn spectator_move(player: &mut LocalPlayer, forward: f64, strafe: f64, vertical: f64) {
+    let look = player.look_dir.as_vec();
+    let yaw = player.look_dir.y_rot_rad() as f64;
+    let (sin_yaw, cos_yaw) = yaw.sin_cos();
+    let right = glam::dvec3(-cos_yaw, 0.0, -sin_yaw);
+    let mut movement = glam::dvec3(
+        f64::from(look.x) * forward + right.x * strafe,
+        f64::from(look.y) * forward + vertical,
+        f64::from(look.z) * forward + right.z * strafe,
+    );
+    if movement.length_squared() > 1.0 {
+        movement = movement.normalize();
+    }
+    let speed = f64::from(player.fly_speed) * if player.sprinting { 2.5 } else { 1.0 };
+    player.position += movement * speed;
+    player.velocity = movement.into();
+    player.on_ground = false;
+    player.horizontal_collision = false;
 }
 
 fn tick_water(
@@ -759,5 +804,16 @@ mod tests {
         player.position.y = 1.0;
         let chunks = ChunkStore::new(2);
         assert_eq!(ground_slipperiness(&player, &chunks), BLOCK_FRICTION);
+    }
+
+    #[test]
+    fn spectator_travel_ignores_collision_and_moves_along_look_vector() {
+        let mut player = LocalPlayer::new();
+        player.game_mode = 3;
+        player.fly_speed = 0.05;
+        spectator_move(&mut player, 1.0, 0.0, 0.0);
+        assert!(player.position.z > 0.04);
+        assert!(!player.on_ground);
+        assert!(!player.horizontal_collision);
     }
 }
