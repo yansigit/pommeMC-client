@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use azalea_buf::AzBuf;
+use azalea_core::bitset::FixedBitSet;
 use azalea_protocol::address::ServerAddr;
 use azalea_protocol::packets::ClientIntention;
 use azalea_protocol::packets::config::{ClientboundConfigPacket, ServerboundConfigPacket};
@@ -28,6 +30,78 @@ struct ChatSigningState {
     session_id: uuid::Uuid,
     certificates: azalea_auth::certs::Certificates,
     message_index: u32,
+    last_seen: LastSeenMessagesTracker,
+}
+
+const LAST_SEEN_CAPACITY: usize = 20;
+
+struct LastSeenMessagesTracker {
+    signatures: Vec<Option<azalea_crypto::signing::MessageSignature>>,
+    tail: usize,
+    offset: u32,
+}
+
+impl Default for LastSeenMessagesTracker {
+    fn default() -> Self {
+        Self {
+            signatures: vec![None; LAST_SEEN_CAPACITY],
+            tail: 0,
+            offset: 0,
+        }
+    }
+}
+
+impl LastSeenMessagesTracker {
+    fn add(&mut self, signature: azalea_crypto::signing::MessageSignature) {
+        self.signatures[self.tail] = Some(signature);
+        self.tail = (self.tail + 1) % LAST_SEEN_CAPACITY;
+        self.offset = self.offset.saturating_add(1);
+    }
+
+    fn snapshot_and_acknowledge(
+        &mut self,
+    ) -> (
+        Vec<azalea_crypto::signing::MessageSignature>,
+        azalea_protocol::packets::game::s_chat::LastSeenMessagesUpdate,
+    ) {
+        let mut acknowledged = FixedBitSet::<LAST_SEEN_CAPACITY>::new();
+        let mut signatures = Vec::with_capacity(LAST_SEEN_CAPACITY);
+        for position in 0..LAST_SEEN_CAPACITY {
+            let index = (self.tail + position) % LAST_SEEN_CAPACITY;
+            if let Some(signature) = &self.signatures[index] {
+                acknowledged.set(position);
+                signatures.push(signature.clone());
+            }
+        }
+        let offset = std::mem::take(&mut self.offset);
+        let checksum = last_seen_checksum(&signatures);
+        (
+            signatures,
+            azalea_protocol::packets::game::s_chat::LastSeenMessagesUpdate {
+                offset,
+                acknowledged,
+                checksum,
+            },
+        )
+    }
+}
+
+fn last_seen_checksum(signatures: &[azalea_crypto::signing::MessageSignature]) -> u8 {
+    if signatures.is_empty() {
+        return 0;
+    }
+    let mut checksum = 1i32;
+    for signature in signatures {
+        let mut signature_hash = 1i32;
+        for byte in signature.bytes {
+            signature_hash = signature_hash
+                .wrapping_mul(31)
+                .wrapping_add(i32::from(byte));
+        }
+        checksum = checksum.wrapping_mul(31).wrapping_add(signature_hash);
+    }
+    let checksum = checksum as u8;
+    if checksum == 0 { 1 } else { checksum }
 }
 
 impl ChatSigningState {
@@ -40,6 +114,7 @@ impl ChatSigningState {
             session_id: uuid::Uuid::new_v4(),
             certificates,
             message_index: 0,
+            last_seen: LastSeenMessagesTracker::default(),
         }
     }
 
@@ -66,17 +141,17 @@ impl ChatSigningState {
         content: &str,
         timestamp: std::time::SystemTime,
         salt: u64,
+        last_seen: &[azalea_crypto::signing::MessageSignature],
     ) -> azalea_crypto::signing::MessageSignature {
-        let signature = azalea_crypto::signing::sign_chat_message(
-            &azalea_crypto::signing::SignChatMessageOptions {
-                account_uuid: self.account_uuid,
-                chat_session_uuid: self.session_id,
-                message_index: self.message_index,
-                salt,
-                timestamp,
-                message: content.to_owned(),
-                private_key: self.certificates.private_key.clone(),
-            },
+        let signature = sign_chat_message(
+            self.account_uuid,
+            self.session_id,
+            self.message_index,
+            salt,
+            timestamp,
+            content,
+            last_seen,
+            &self.certificates.private_key,
         );
         self.message_index = self.message_index.saturating_add(1);
         signature
@@ -88,7 +163,8 @@ impl ChatSigningState {
         timestamp: std::time::SystemTime,
     ) -> ServerboundGamePacket {
         let salt = azalea_crypto::signing::make_salt();
-        let signature = self.sign_content(&message, timestamp, salt);
+        let (last_seen, last_seen_messages) = self.last_seen.snapshot_and_acknowledge();
+        let signature = self.sign_content(&message, timestamp, salt, &last_seen);
         ServerboundGamePacket::Chat(azalea_protocol::packets::game::s_chat::ServerboundChat {
             message,
             timestamp: timestamp
@@ -97,7 +173,7 @@ impl ChatSigningState {
                 .as_millis() as u64,
             salt,
             signature: Some(signature),
-            last_seen_messages: Default::default(),
+            last_seen_messages,
         })
     }
 
@@ -108,12 +184,13 @@ impl ChatSigningState {
         timestamp: std::time::SystemTime,
     ) -> ServerboundGamePacket {
         let salt = azalea_crypto::signing::make_salt();
+        let (last_seen, last_seen_messages) = self.last_seen.snapshot_and_acknowledge();
         let argument_signatures = arguments
             .into_iter()
             .map(|(name, value)| {
                 azalea_protocol::packets::game::s_chat_command_signed::ArgumentSignature {
                     name,
-                    signature: self.sign_content(&value, timestamp, salt),
+                    signature: self.sign_content(&value, timestamp, salt, &last_seen),
                 }
             })
             .collect();
@@ -126,9 +203,63 @@ impl ChatSigningState {
                     .as_millis() as u64,
                 salt,
                 argument_signatures,
-                last_seen_messages: Default::default(),
+                last_seen_messages,
             },
         )
+    }
+
+    fn observe_inbound(&mut self, signature: azalea_crypto::signing::MessageSignature) {
+        self.last_seen.add(signature);
+    }
+}
+
+#[expect(clippy::too_many_arguments)]
+fn sign_chat_message(
+    account_uuid: uuid::Uuid,
+    session_id: uuid::Uuid,
+    message_index: u32,
+    salt: u64,
+    timestamp: std::time::SystemTime,
+    content: &str,
+    last_seen: &[azalea_crypto::signing::MessageSignature],
+    private_key: &rsa::RsaPrivateKey,
+) -> azalea_crypto::signing::MessageSignature {
+    use rsa::signature::{RandomizedSigner, SignatureEncoding};
+
+    let mut data_to_sign = Vec::new();
+    1i32.azalea_write(&mut data_to_sign).unwrap();
+    account_uuid.azalea_write(&mut data_to_sign).unwrap();
+    session_id.azalea_write(&mut data_to_sign).unwrap();
+    message_index.azalea_write(&mut data_to_sign).unwrap();
+    salt.azalea_write(&mut data_to_sign).unwrap();
+    timestamp
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("timestamp must be after epoch")
+        .as_secs()
+        .azalea_write(&mut data_to_sign)
+        .unwrap();
+    let message_len: u32 = content.len().try_into().expect("chat message fits u32");
+    message_len.azalea_write(&mut data_to_sign).unwrap();
+    data_to_sign.extend_from_slice(content.as_bytes());
+    let last_seen_len: i32 = last_seen
+        .len()
+        .try_into()
+        .expect("last-seen window fits i32");
+    last_seen_len.azalea_write(&mut data_to_sign).unwrap();
+    for signature in last_seen {
+        data_to_sign.extend_from_slice(&signature.bytes);
+    }
+
+    let signing_key = rsa::pkcs1v15::SigningKey::<sha2::Sha256>::new(private_key.clone());
+    let mut rng = rand::rng();
+    let signature = signing_key
+        .sign_with_rng(&mut rng, &data_to_sign)
+        .to_bytes();
+    azalea_crypto::signing::MessageSignature {
+        bytes: signature
+            .as_ref()
+            .try_into()
+            .expect("signature must be 256 bytes"),
     }
 }
 
@@ -1139,6 +1270,12 @@ async fn game_loop(
                         })?;
                     }
                 }
+                if let ClientboundGamePacket::PlayerChat(chat) = &packet
+                    && let Some(signature) = &chat.signature
+                    && let Some(state) = &chat_signing
+                {
+                    state.lock().observe_inbound(signature.clone());
+                }
                 handle_game_packet(&packet, &sender, event_tx, &registry_holder, &shared_tree)
             }
             Err(e) => skip_malformed_packet(e)?,
@@ -1223,6 +1360,47 @@ mod tests {
     use pomme_protocol::version::LATEST;
 
     use super::*;
+
+    fn test_signature(byte: u8) -> azalea_crypto::signing::MessageSignature {
+        azalea_crypto::signing::MessageSignature { bytes: [byte; 256] }
+    }
+
+    #[test]
+    fn last_seen_window_acknowledges_recent_signed_messages() {
+        let mut tracker = LastSeenMessagesTracker::default();
+        tracker.add(test_signature(1));
+        tracker.add(test_signature(2));
+
+        let (signatures, update) = tracker.snapshot_and_acknowledge();
+        assert_eq!(signatures, vec![test_signature(1), test_signature(2)]);
+        assert_eq!(update.offset, 2);
+        assert!(update.acknowledged.index(18));
+        assert!(update.acknowledged.index(19));
+        assert!(!update.acknowledged.index(17));
+        assert_ne!(update.checksum, 0);
+
+        let (_, repeated) = tracker.snapshot_and_acknowledge();
+        assert_eq!(repeated.offset, 0);
+        assert_eq!(repeated.acknowledged, update.acknowledged);
+        assert_eq!(repeated.checksum, update.checksum);
+    }
+
+    #[test]
+    fn last_seen_window_keeps_only_the_twenty_most_recent_messages() {
+        let mut tracker = LastSeenMessagesTracker::default();
+        for byte in 0..21 {
+            tracker.add(test_signature(byte));
+        }
+
+        let (signatures, update) = tracker.snapshot_and_acknowledge();
+        assert_eq!(update.offset, 21);
+        assert_eq!(signatures.len(), LAST_SEEN_CAPACITY);
+        assert_eq!(signatures[0], test_signature(1));
+        assert_eq!(signatures[19], test_signature(20));
+        for index in 0..LAST_SEEN_CAPACITY {
+            assert!(update.acknowledged.index(index));
+        }
+    }
 
     /// 762 (1.19.4) is not a supported version at all, so it never gains a
     /// wire translation; 775 has one.
