@@ -2666,6 +2666,7 @@ pub fn update_game(
             clicked,
             middle_clicked,
             right_clicked,
+            core.input.action_just_pressed(input::Action::DropItem),
             scroll_delta,
             &text_events,
             core.input.key_just_pressed(winit::keyboard::KeyCode::KeyT),
@@ -2704,6 +2705,9 @@ pub fn update_game(
                 for (slot_num, item) in items {
                     set_creative_slot(slot_num, item);
                 }
+            }
+            crate::ui::creative_inventory::CreativeAction::Drop(item) => {
+                set_creative_slot(u16::MAX, item);
             }
             crate::ui::creative_inventory::CreativeAction::None => {}
         }

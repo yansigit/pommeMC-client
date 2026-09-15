@@ -317,6 +317,9 @@ impl Default for CreativeState {
 pub enum CreativeAction {
     None,
     Close,
+    /// Drop an item from the creative screen into the world. Vanilla encodes
+    /// this as SetCreativeModeSlot with slot -1 (u16::MAX on the wire).
+    Drop(ItemStack),
     /// Set a real player-inventory slot to the given stack (creative set-slot).
     SetSlot(u16, ItemStack),
     /// Set several slots at once (drag distribution).
@@ -333,6 +336,7 @@ pub fn build_creative_inventory(
     clicked: bool,
     middle_clicked: bool,
     right_clicked: bool,
+    drop_pressed: bool,
     scroll_delta: f32,
     events: &[crate::ui::text_edit::TextInputEvent],
     chat_key: bool,
@@ -522,6 +526,13 @@ pub fn build_creative_inventory(
                             }
                         }
                     }
+                    if drop_pressed
+                        && matches!(action, CreativeAction::None)
+                        && state.cursor_item.is_empty()
+                        && let ItemStack::Present(data) = &item
+                    {
+                        action = CreativeAction::Drop(ItemStack::Present(data.clone()));
+                    }
                 }
             }
         }
@@ -598,8 +609,18 @@ pub fn build_creative_inventory(
         }
     }
 
-    // TODO: Q over a hovered item should drop it into the world (vanilla
-    // sends SetCreativeModeSlot with slot -1 via handleCreativeModeItemDrop).
+    // Vanilla `handleCreativeModeItemDrop`: Q over any item sends the hovered
+    // stack with slot -1. The server owns the spawned item and validates the
+    // creative action, so no local inventory mutation is performed here.
+    if drop_pressed
+        && matches!(action, CreativeAction::None)
+        && state.drag.is_none()
+        && let Some(hit) = &real_hit
+        && hit.slot != SLOT_TRASH
+        && let Some(item) = creative_item_at(inventory, hit.slot)
+    {
+        action = CreativeAction::Drop(item);
+    }
 
     // Keyboard hotbar swap on a hovered real slot (vanilla routes it through
     // AbstractContainerScreen.checkHotbarKeyPressed → inventoryMenu SWAP).
@@ -647,7 +668,7 @@ pub fn build_creative_inventory(
     let outside = !hit_test(cursor, [ox, oy, inv_w, inv_h]);
     if clicked && outside && tab_hit.is_none() && matches!(action, CreativeAction::None) {
         if state.cursor_item.is_present() {
-            // TODO: drop the carried item into the world; for now just discard it.
+            action = CreativeAction::Drop(state.cursor_item.clone());
             state.cursor_item = ItemStack::Empty;
         } else {
             action = CreativeAction::Close;
@@ -673,6 +694,37 @@ pub fn build_creative_inventory(
     }
 
     action
+}
+
+fn creative_item_at(inventory: &Inventory, slot: u16) -> Option<ItemStack> {
+    if slot < inventory.slots().len() as u16 {
+        let item = inventory.slot(slot as usize).clone();
+        item.is_present().then_some(item)
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use azalea_inventory::{ItemStack, ItemStackData};
+    use azalea_registry::builtin::ItemKind;
+
+    use super::creative_item_at;
+    use crate::player::inventory::Inventory;
+
+    #[test]
+    fn creative_drop_reads_real_inventory_slots_and_rejects_empty_or_unknown() {
+        let mut inventory = Inventory::new();
+        inventory.set_slot(
+            36,
+            ItemStack::Present(ItemStackData::new(ItemKind::Stone, 3)),
+        );
+
+        assert_eq!(creative_item_at(&inventory, 36).unwrap().count(), 3);
+        assert!(creative_item_at(&inventory, 0).is_none());
+        assert!(creative_item_at(&inventory, u16::MAX).is_none());
+    }
 }
 
 fn tab_sprite(row: Row, col: u8, selected: bool) -> SpriteId {
