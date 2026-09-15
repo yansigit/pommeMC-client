@@ -282,6 +282,11 @@ pub enum MenuAction {
         /// From the entry's ping, when joining out of the server list.
         protocol: Option<i32>,
     },
+    /// Retry the most recent remote connection with the current account.
+    Reconnect {
+        server: String,
+        protocol: Option<i32>,
+    },
     /// Start a local world through the same Java protocol path as multiplayer.
     PlayWorld {
         save_path: PathBuf,
@@ -289,6 +294,13 @@ pub enum MenuAction {
     },
     ChangeTheme(PanoramaTheme),
     Quit,
+}
+
+/// The remote endpoint that can be retried after a disconnect.
+#[derive(Clone)]
+pub struct ReconnectTarget {
+    pub server: String,
+    pub protocol: Option<i32>,
 }
 
 pub struct MainMenuResult {
@@ -431,7 +443,7 @@ enum Screen {
     DirectConnect,
     AddServer,
     EditServer(usize),
-    Disconnected(String),
+    Disconnected(String, Option<ReconnectTarget>),
     Options,
     OptionsOnline,
     OptionsVideo,
@@ -476,7 +488,7 @@ impl Screen {
             Self::AddServer => Self::AddServer,
             Self::ConfirmDelete(i) => Self::ConfirmDelete(*i),
             Self::EditServer(i) => Self::EditServer(*i),
-            Self::Disconnected(s) => Self::Disconnected(s.clone()),
+            Self::Disconnected(s, target) => Self::Disconnected(s.clone(), target.clone()),
         }
     }
 }
@@ -991,7 +1003,11 @@ impl MainMenu {
     }
 
     pub fn show_disconnect(&mut self, reason: String) {
-        self.set_screen(Screen::Disconnected(reason));
+        self.set_screen(Screen::Disconnected(reason, None));
+    }
+
+    pub fn show_disconnect_with_retry(&mut self, reason: String, target: ReconnectTarget) {
+        self.set_screen(Screen::Disconnected(reason, Some(target)));
     }
 
     /// Advance the button focus ring on Tab / Shift+Tab. Wrapping uses last
@@ -1070,7 +1086,7 @@ impl MainMenu {
             Screen::AddServer | Screen::EditServer(_) => {
                 self.build_edit_server(screen_w, screen_h, input, &text_width_fn)
             }
-            Screen::Disconnected(_) => {
+            Screen::Disconnected(_, _) => {
                 self.build_disconnected(screen_w, screen_h, input, &text_width_fn)
             }
             Screen::Options => self.build_options(screen_w, screen_h, input, &text_width_fn),
@@ -1196,5 +1212,37 @@ mod tests {
             let loaded: Settings = serde_json::from_str(&json).unwrap();
             assert_eq!(PanoramaTheme::from_u8(loaded.theme), theme);
         }
+    }
+
+    #[test]
+    fn disconnected_remote_screen_dispatches_retry_target() {
+        let game_dir =
+            std::env::temp_dir().join(format!("pomme-reconnect-test-{}", std::process::id()));
+        std::fs::create_dir_all(&game_dir).unwrap();
+        let runtime = Arc::new(tokio::runtime::Runtime::new().unwrap());
+        let mut menu = MainMenu::new(&game_dir, runtime, "Player".into(), "26.2".into(), None);
+        menu.show_disconnect_with_retry(
+            "Connection reset".into(),
+            ReconnectTarget {
+                server: "example.test:25565".into(),
+                protocol: Some(775),
+            },
+        );
+
+        // At 854x480 vanilla's automatic GUI scale is 2. The retry button is
+        // the left button in the centered row.
+        let mut input = MenuInput::backdrop();
+        input.cursor = (400.0, 300.0);
+        input.clicked = true;
+        let result = menu.build(854.0, 480.0, &input, |_, _| 0.0);
+
+        match result.action {
+            MenuAction::Reconnect { server, protocol } => {
+                assert_eq!(server, "example.test:25565");
+                assert_eq!(protocol, Some(775));
+            }
+            _ => panic!("expected retry to dispatch a reconnect action"),
+        }
+        let _ = std::fs::remove_dir_all(game_dir);
     }
 }

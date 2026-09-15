@@ -115,6 +115,7 @@ pub fn update_menu(
             protocol,
         } => {
             core.audio.stop_menu_music();
+            core.remember_remote_target(server.clone(), protocol);
             let connect_args = ConnectArgs {
                 transport: Transport::Remote { server, protocol },
                 username,
@@ -125,8 +126,21 @@ pub fn update_menu(
 
             return MenuUpdateResult::Connect { connect_args };
         }
+        MenuAction::Reconnect { server, protocol } => {
+            core.audio.stop_menu_music();
+            core.remember_remote_target(server.clone(), protocol);
+            let connect_args = ConnectArgs {
+                transport: Transport::Remote { server, protocol },
+                username: core.user.username.clone(),
+                uuid: core.user.uuid,
+                access_token: core.user.access_token.clone(),
+                view_distance: core.menu.render_distance as u8,
+            };
+            return MenuUpdateResult::Connect { connect_args };
+        }
         MenuAction::PlayWorld { save_path, seed } => {
             core.audio.stop_menu_music();
+            core.clear_remote_target();
             #[cfg(feature = "singleplayer")]
             {
                 let transport = core.launch_singleplayer(save_path, seed);

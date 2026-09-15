@@ -216,6 +216,7 @@ impl ApplicationHandler for App {
                 self.core.apply_cursor_grab(&window, None);
 
                 if let Some(server_ip) = quick_access_multiplayer {
+                    self.core.remember_remote_target(server_ip.clone(), None);
                     let connection = spawn_connection(
                         &self.core.tokio_rt,
                         ConnectArgs {
@@ -631,7 +632,7 @@ impl ApplicationHandler for App {
                                 AppPhase::InMenu { gfx, panorama }
                             }
                             ConnectingUpdateResult::Disconnected { reason } => {
-                                core.menu.show_disconnect(reason);
+                                core.show_disconnect(reason);
                                 core.return_to_menu(&mut gfx);
 
                                 AppPhase::InMenu { gfx, panorama }
@@ -678,7 +679,7 @@ impl ApplicationHandler for App {
                             }
                             GameUpdateResult::Disconnected { reason } => {
                                 core.audio.stop_all_sounds();
-                                core.menu.show_disconnect(reason);
+                                core.show_disconnect(reason);
                                 core.return_to_menu(&mut gfx);
 
                                 AppPhase::InMenu {

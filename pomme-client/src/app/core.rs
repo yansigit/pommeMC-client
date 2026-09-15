@@ -31,6 +31,7 @@ use crate::renderer::Renderer;
 use crate::resource_pack::ResourcePackManager;
 use crate::ui::menu::{
     CREDITS_KEY_CTRL_L, CREDITS_KEY_CTRL_R, CREDITS_KEY_SPACE, CREDITS_KEY_UP, MainMenu, MenuInput,
+    ReconnectTarget,
 };
 use crate::user::UserData;
 use crate::world::chunk::ChunkStore;
@@ -230,6 +231,7 @@ pub struct AppCore {
     pub data_dirs: DataDirs,
     pub version: String,
     pub resource_packs: ResourcePackManager,
+    last_remote: Option<ReconnectTarget>,
     pub pending_pack_download: Option<PendingPackDownload>,
     pub asset_index: Option<AssetIndex>,
     pub audio: crate::audio::AudioEngine,
@@ -311,6 +313,7 @@ impl AppCore {
             data_dirs,
             version,
             resource_packs,
+            last_remote: None,
             pending_pack_download: None,
             asset_index,
             audio,
@@ -342,6 +345,22 @@ impl AppCore {
             dt,
             credits_keys_down,
             credits_keys_pressed,
+        }
+    }
+
+    pub fn remember_remote_target(&mut self, server: String, protocol: Option<i32>) {
+        self.last_remote = Some(ReconnectTarget { server, protocol });
+    }
+
+    pub fn clear_remote_target(&mut self) {
+        self.last_remote = None;
+    }
+
+    pub(crate) fn show_disconnect(&mut self, reason: String) {
+        if let Some(target) = self.last_remote.clone() {
+            self.menu.show_disconnect_with_retry(reason, target);
+        } else {
+            self.menu.show_disconnect(reason);
         }
     }
 

@@ -1037,15 +1037,19 @@ impl MainMenu {
         input: &MenuInput,
         _text_width_fn: &dyn Fn(&str, f32) -> f32,
     ) -> MainMenuResult {
-        let reason = match &self.screen {
-            Screen::Disconnected(r) => r.clone(),
+        let (reason, reconnect) = match &self.screen {
+            Screen::Disconnected(r, target) => (r.clone(), target.clone()),
             _ => return empty_result(2.0),
         };
 
         let gs = crate::ui::hud::gui_scale(screen_w, screen_h, self.gui_scale_setting);
         let title_size = 18.0 * gs;
         let body_size = 11.0 * gs;
-        let btn_w = 160.0 * gs;
+        let btn_w = if reconnect.is_some() {
+            120.0 * gs
+        } else {
+            160.0 * gs
+        };
         let btn_h = 30.0 * gs;
         let gap = 12.0 * gs;
 
@@ -1075,15 +1079,54 @@ impl MainMenu {
         });
 
         let btn_y = top_y + title_size + gap + body_size + gap * 2.0;
+        let row_w = if reconnect.is_some() {
+            btn_w * 2.0 + gap
+        } else {
+            btn_w
+        };
+        let row_x = cx - row_w / 2.0;
         self.focus_advance(input);
         let mut ctx = self.make_focus_ctx(input);
+        let retry_clicked = reconnect.is_some()
+            && push_button_f(
+                &mut elements,
+                &mut ctx,
+                &mut any_hovered,
+                input.cursor,
+                input.clicked,
+                row_x,
+                btn_y,
+                btn_w,
+                btn_h,
+                gs,
+                "Retry",
+                true,
+            );
+        if retry_clicked {
+            let target = reconnect.expect("retry is only rendered with a target");
+            self.set_screen(Screen::Main);
+            return MainMenuResult {
+                elements,
+                action: MenuAction::Reconnect {
+                    server: target.server,
+                    protocol: target.protocol,
+                },
+                cursor_pointer: any_hovered,
+                blur: 2.0,
+                clicked_button: true,
+            };
+        }
         if push_button_f(
             &mut elements,
             &mut ctx,
             &mut any_hovered,
             input.cursor,
             input.clicked,
-            cx - btn_w / 2.0,
+            if reconnect.is_some() {
+                row_x + btn_w + gap
+            } else {
+                row_x
+            },
             btn_y,
             btn_w,
             btn_h,
