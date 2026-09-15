@@ -16,7 +16,7 @@ pub const STICK_MOVEMENT_THRESHOLD: f32 = 0.25;
 /// an "instant".
 pub const SHORT_RUMBLE_TIME: u32 = 5;
 
-#[derive(Hash, PartialEq, Eq, Clone)]
+#[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum Action {
     Jump,
     Sneak,
@@ -82,6 +82,10 @@ pub struct InputState {
     strong_rumble_effect: Option<Effect>,
     active_gamepad_id: Option<GamepadId>,
     recent_actions: HashMap<Action, bool>,
+    /// Actions held by the non-GUI acceptance channel. They are folded into
+    /// `performing_action` so automation exercises the same handlers as real
+    /// keyboard, mouse, and controller input.
+    injected_actions: HashSet<Action>,
 }
 
 #[derive(Default)]
@@ -163,6 +167,7 @@ impl InputState {
             strong_rumble_effect: strong_effect,
             active_gamepad_id: None,
             recent_actions: HashMap::new(),
+            injected_actions: HashSet::new(),
         }
     }
 
@@ -392,6 +397,9 @@ impl InputState {
     }
 
     pub fn performing_action(&self, action: Action) -> bool {
+        if self.injected_actions.contains(&action) {
+            return true;
+        }
         match action {
             Action::Jump => {
                 self.key_pressed(KeyCode::Space) || self.gamepad_button_down(Button::South)
@@ -439,6 +447,24 @@ impl InputState {
     /// originating key press doesn't trigger it again.
     pub fn clear_action(&mut self, action: Action) {
         self.recent_actions.remove(&action);
+    }
+
+    /// Press an action through the same frame/tick state consumed by gameplay
+    /// and menu handlers. The action remains held until
+    /// `inject_action_release`.
+    pub fn inject_action_press(&mut self, action: Action) {
+        if self.injected_actions.insert(action) {
+            self.recent_actions.insert(action, true);
+            if matches!(action, Action::DropItem | Action::SwapOffhand) {
+                *self.click_counts.entry(action).or_insert(0) += 1;
+            }
+        }
+    }
+
+    /// Release an action previously injected by an acceptance script.
+    pub fn inject_action_release(&mut self, action: Action) {
+        self.injected_actions.remove(&action);
+        self.recent_actions.insert(action, false);
     }
 
     pub fn clear_just_pressed_actions(&mut self) {
@@ -864,4 +890,39 @@ fn build_rumble_effect(
         .finish(manager)
         .map_err(|e| tracing::warn!("Failed to create rumble effect: {e}"))
         .ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Action, InputState};
+
+    #[test]
+    fn injected_action_uses_normal_held_and_just_pressed_paths() {
+        let mut input = InputState::released();
+
+        input.inject_action_press(Action::Jump);
+        assert!(input.performing_action(Action::Jump));
+        assert!(input.action_just_pressed(Action::Jump));
+
+        input.clear_just_pressed_actions();
+        assert!(input.performing_action(Action::Jump));
+        assert!(!input.action_just_pressed(Action::Jump));
+
+        input.inject_action_release(Action::Jump);
+        assert!(!input.performing_action(Action::Jump));
+    }
+
+    #[test]
+    fn injected_click_counted_actions_are_consumed_once() {
+        let mut input = InputState::released();
+
+        input.inject_action_press(Action::DropItem);
+        input.inject_action_press(Action::DropItem);
+        assert!(input.consume_click(Action::DropItem));
+        assert!(!input.consume_click(Action::DropItem));
+
+        input.inject_action_release(Action::DropItem);
+        input.inject_action_press(Action::DropItem);
+        assert!(input.consume_click(Action::DropItem));
+    }
 }
