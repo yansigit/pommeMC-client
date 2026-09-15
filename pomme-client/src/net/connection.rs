@@ -1,3 +1,6 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use azalea_protocol::address::ServerAddr;
 use azalea_protocol::packets::ClientIntention;
 use azalea_protocol::packets::config::{ClientboundConfigPacket, ServerboundConfigPacket};
@@ -16,6 +19,13 @@ use super::NetworkEvent;
 use super::conn::{Conn, MemoryEnd, RawWriter};
 use super::handler::{handle_game_packet, handle_raw_game_packet};
 use super::sender::{Outbound, PacketSender};
+
+pub(crate) const SECURE_CHAT_NOTICE: &str =
+    "Chat disabled: this server requires signed chat, which this client does not support yet.";
+
+pub(crate) fn unsigned_chat_allowed(secure_chat_required: bool, message: &str) -> bool {
+    !secure_chat_required || message.starts_with('/')
+}
 
 #[derive(Error, Debug)]
 pub enum ConnectionError {
@@ -82,6 +92,16 @@ pub struct ConnectionHandle {
     pub chat_tx: crossbeam_channel::Sender<String>,
     pub packet_tx: PacketSender,
     pub task: tokio::task::JoinHandle<()>,
+    secure_chat_required: Arc<AtomicBool>,
+}
+
+impl ConnectionHandle {
+    /// Whether the joined server requires signed chat messages. The flag is
+    /// populated from the authoritative game login packet, so callers never
+    /// infer policy from the selected client version.
+    pub fn secure_chat_required(&self) -> bool {
+        self.secure_chat_required.load(Ordering::Acquire)
+    }
 }
 
 impl Drop for ConnectionHandle {
@@ -99,10 +119,19 @@ pub fn spawn_connection(rt: &tokio::runtime::Runtime, args: ConnectArgs) -> Conn
     let (chat_tx, chat_rx) = crossbeam_channel::bounded::<String>(64);
     let (packet_tx, packet_rx) = mpsc::unbounded_channel::<Outbound>();
     let game_packet_tx = packet_tx.clone();
+    let secure_chat_required = Arc::new(AtomicBool::new(false));
+    let secure_chat_required_task = Arc::clone(&secure_chat_required);
     let packet_tx = PacketSender::new(packet_tx);
     let task = rt.spawn(async move {
-        if let Err(e) =
-            connect_to_server(args, event_tx.clone(), chat_rx, game_packet_tx, packet_rx).await
+        if let Err(e) = connect_to_server(
+            args,
+            event_tx.clone(),
+            chat_rx,
+            game_packet_tx,
+            packet_rx,
+            secure_chat_required_task,
+        )
+        .await
         {
             tracing::error!("Network error: {e}");
             let reason = friendly_error_reason(&e);
@@ -114,6 +143,7 @@ pub fn spawn_connection(rt: &tokio::runtime::Runtime, args: ConnectArgs) -> Conn
         chat_tx,
         packet_tx,
         task,
+        secure_chat_required,
     }
 }
 
@@ -123,6 +153,7 @@ pub async fn connect_to_server(
     chat_rx: crossbeam_channel::Receiver<String>,
     game_packet_tx: mpsc::UnboundedSender<Outbound>,
     mut game_packet_rx: mpsc::UnboundedReceiver<Outbound>,
+    secure_chat_required: Arc<AtomicBool>,
 ) -> Result<(), ConnectionError> {
     let ConnectArgs {
         transport,
@@ -215,6 +246,7 @@ pub async fn connect_to_server(
         game_packet_rx,
         joined,
         view_distance,
+        secure_chat_required,
     )
     .await
 }
@@ -709,6 +741,7 @@ fn nbt_string_from_compound(compound: &simdnbt::owned::NbtCompound, key: &str) -
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn game_loop(
     mut conn: Conn,
     event_tx: &Sender<NetworkEvent>,
@@ -717,6 +750,7 @@ async fn game_loop(
     mut outbound_rx: mpsc::UnboundedReceiver<Outbound>,
     joined: Joined,
     view_distance: u8,
+    secure_chat_required: Arc<AtomicBool>,
 ) -> Result<(), ConnectionError> {
     let Joined {
         registries: mut registry_holder,
@@ -729,14 +763,9 @@ async fn game_loop(
 
     let chat_outbound_tx = outbound_tx;
     let chat_tree = shared_tree.clone();
+    let chat_secure_required = Arc::clone(&secure_chat_required);
+    let chat_event_tx = event_tx.clone();
     tokio::spawn(async move {
-        // TODO: secure chat session + signing for enforce-secure-profile=true servers.
-        // When access_token is set, fetch profile certs
-        // (azalea_auth::certs::fetch_certificates),
-        // send ServerboundChatSessionUpdate, then sign chat and signable-arg commands
-        // (ServerboundChatCommandSigned) with azalea_crypto signing (needs the
-        // "signing" feature). Everything is sent unsigned atm, which only
-        // works on enforce-secure-profile=false.
         while let Ok(msg) = tokio::task::block_in_place(|| chat_rx.recv()) {
             let packet = if let Some(command) = msg.strip_prefix('/') {
                 tracing::info!("Sending command: {command:?}");
@@ -747,8 +776,17 @@ async fn game_loop(
                     .unwrap_or(false);
                 if signable {
                     tracing::warn!(
-                        "Command has signable arguments but chat signing is not implemented; sending unsigned"
+                        "Command has signable arguments but chat signing is not implemented"
                     );
+                    if chat_secure_required.load(Ordering::Acquire) {
+                        let _ = chat_event_tx.try_send(NetworkEvent::ChatMessage {
+                            spans: vec![crate::ui::text::TextSpan::new(
+                                "Chat disabled: this server requires signed commands, which this client does not support yet.".into(),
+                                [1.0, 0.35, 0.35, 1.0],
+                            )],
+                        });
+                        continue;
+                    }
                 }
                 ServerboundGamePacket::ChatCommand(
                     azalea_protocol::packets::game::s_chat_command::ServerboundChatCommand {
@@ -756,6 +794,15 @@ async fn game_loop(
                     },
                 )
             } else {
+                if chat_secure_required.load(Ordering::Acquire) {
+                    let _ = chat_event_tx.try_send(NetworkEvent::ChatMessage {
+                        spans: vec![crate::ui::text::TextSpan::new(
+                            SECURE_CHAT_NOTICE.into(),
+                            [1.0, 0.35, 0.35, 1.0],
+                        )],
+                    });
+                    continue;
+                }
                 ServerboundGamePacket::Chat(
                     azalea_protocol::packets::game::s_chat::ServerboundChat {
                         message: msg,
@@ -875,6 +922,14 @@ async fn game_loop(
                     && !t.remap_inbound(&mut packet)
                 {
                     continue;
+                }
+                if let ClientboundGamePacket::Login(login) = &packet {
+                    secure_chat_required.store(login.enforces_secure_chat, Ordering::Release);
+                    if login.enforces_secure_chat {
+                        tracing::warn!(
+                            "Server requires secure chat; unsigned chat and signable commands will be blocked"
+                        );
+                    }
                 }
                 handle_game_packet(&packet, &sender, event_tx, &registry_holder, &shared_tree)
             }
@@ -997,6 +1052,14 @@ mod tests {
         }
     }
 
+    #[test]
+    fn secure_chat_policy_blocks_only_unsigned_chat() {
+        assert!(unsigned_chat_allowed(false, "hello"));
+        assert!(unsigned_chat_allowed(false, "/list"));
+        assert!(!unsigned_chat_allowed(true, "hello"));
+        assert!(unsigned_chat_allowed(true, "/list"));
+    }
+
     /// The whole join over an in-memory pipe, against a peer that sends only
     /// the two frames the client actually requires: login finished, then
     /// finish configuration. No registry data, no compression, no encryption.
@@ -1024,6 +1087,7 @@ mod tests {
         let (event_tx, event_rx) = crossbeam_channel::bounded(4096);
         let (_chat_tx, chat_rx) = crossbeam_channel::bounded(64);
         let (packet_tx, packet_rx) = mpsc::unbounded_channel();
+        let secure_chat_required = Arc::new(AtomicBool::new(false));
 
         let client = tokio::spawn(connect_to_server(
             ConnectArgs {
@@ -1037,6 +1101,7 @@ mod tests {
             chat_rx,
             packet_tx,
             packet_rx,
+            secure_chat_required,
         ));
 
         assert!(matches!(

@@ -501,8 +501,14 @@ impl AppCore {
         game.respawn_sent = true;
     }
 
-    pub fn send_chat_message(&self, connection: &ConnectionHandle, msg: String) {
-        let _ = connection.chat_tx.try_send(msg);
+    pub fn send_chat_message(&self, connection: &ConnectionHandle, msg: String) -> bool {
+        // Commands without signable arguments remain valid unsigned protocol
+        // messages. Ordinary chat cannot be sent safely until chat-session
+        // certificates and signatures are implemented.
+        if !crate::net::connection::unsigned_chat_allowed(connection.secure_chat_required(), &msg) {
+            return false;
+        }
+        connection.chat_tx.try_send(msg).is_ok()
     }
 
     fn queue_player_skin(&mut self, uuid: uuid::Uuid, textures: Option<String>) {

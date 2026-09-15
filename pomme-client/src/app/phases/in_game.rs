@@ -1661,7 +1661,12 @@ pub fn update_game(
         &|s| gfx.renderer.menu_text_width(s, text_fs),
         game.command_tree.as_deref(),
     ) {
-        core.send_chat_message(connection, msg);
+        if !core.send_chat_message(connection, msg) {
+            game.chat.push_message(vec![crate::ui::text::TextSpan::new(
+                crate::net::connection::SECURE_CHAT_NOTICE.into(),
+                [1.0, 0.35, 0.35, 1.0],
+            )]);
+        }
         core.apply_cursor_grab(&gfx.window, Some(game));
     }
     if let Some((id, command)) = game.chat.take_suggestion_request() {
