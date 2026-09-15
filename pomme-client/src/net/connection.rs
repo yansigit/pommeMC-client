@@ -1727,4 +1727,127 @@ mod tests {
         );
         client.abort();
     }
+
+    /// Boots the real integrated SteelMC server, joins it through the same
+    /// public connection handle used by the application, and waits for the
+    /// first gameplay events. This is intentionally ignored because it
+    /// generates and saves a world, but it is the first end-to-end gate for
+    /// login, configuration, terrain, and client/server transport wiring.
+    #[cfg(feature = "singleplayer")]
+    #[test]
+    #[ignore = "boots SteelMC and generates terrain"]
+    fn integrated_server_acceptance_reaches_gameplay() {
+        use std::fs;
+        use std::time::Duration;
+
+        use pomme_singleplayer::{LaunchOptions, Progress, ServerTransport, launch};
+        use tokio::runtime::Runtime;
+
+        struct TempWorld(std::path::PathBuf);
+
+        impl Drop for TempWorld {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.0);
+            }
+        }
+
+        let runtime = Runtime::new().expect("acceptance runtime should start");
+        runtime.block_on(async {
+            let world = TempWorld(
+                std::env::temp_dir()
+                    .join(format!("pomme-client-acceptance-{}", std::process::id())),
+            );
+            let _ = fs::remove_dir_all(&world.0);
+            fs::create_dir_all(&world.0).expect("acceptance world directory should be writable");
+
+            let (client_end, server_end) = crate::net::conn::memory_pipes();
+            let mut pending = launch(LaunchOptions {
+                save_path: world.0.clone(),
+                seed: 1,
+                view_distance: 2,
+                simulation_distance: 2,
+                transport: ServerTransport {
+                    read: Box::new(server_end.rx),
+                    write: Box::new(server_end.tx),
+                },
+            });
+
+            let startup = tokio::time::timeout(Duration::from_secs(120), async {
+                loop {
+                    match pending.poll() {
+                        Progress::Starting => tokio::time::sleep(Duration::from_millis(25)).await,
+                        Progress::Ready(world) => break world,
+                        Progress::Failed(error) => panic!("integrated server failed: {error}"),
+                    }
+                }
+            })
+            .await
+            .expect("integrated server startup timed out");
+
+            let connection = spawn_connection(
+                &runtime,
+                ConnectArgs {
+                    transport: Transport::Memory(client_end),
+                    username: "AcceptancePlayer".to_owned(),
+                    uuid: uuid::Uuid::nil(),
+                    access_token: None,
+                    view_distance: 2,
+                },
+            );
+
+            let mut connected = false;
+            let mut player_login = false;
+            let mut dimension = false;
+            let mut chunk = false;
+            let mut trace = vec![format!("protocol={}", LATEST.protocol)];
+            tokio::time::timeout(Duration::from_secs(60), async {
+                while !(connected && player_login && dimension && chunk) {
+                    while let Ok(event) = connection.event_rx.try_recv() {
+                        match event {
+                            NetworkEvent::Connected => {
+                                trace.push("Connected".into());
+                                connected = true;
+                            }
+                            NetworkEvent::PlayerLogin { .. } => {
+                                trace.push("PlayerLogin".into());
+                                player_login = true;
+                            }
+                            NetworkEvent::DimensionInfo { .. } => {
+                                trace.push("DimensionInfo".into());
+                                dimension = true;
+                            }
+                            NetworkEvent::ChunkLoaded { .. } => {
+                                trace.push("ChunkLoaded".into());
+                                chunk = true;
+                            }
+                            NetworkEvent::Disconnected { reason } => {
+                                panic!(
+                                    "integrated server disconnected during acceptance: {reason}; \
+                                     trace={trace:?}"
+                                )
+                            }
+                            _ => {}
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
+            })
+            .await
+            .unwrap_or_else(|_| {
+                panic!(
+                    "client did not reach gameplay before the acceptance timeout; trace={trace:?}"
+                )
+            });
+
+            assert!(connected, "client never emitted Connected");
+            assert!(player_login, "client never emitted PlayerLogin");
+            assert!(dimension, "client never emitted DimensionInfo");
+            assert!(chunk, "client never emitted ChunkLoaded");
+
+            drop(connection);
+            drop(startup);
+            drop(pending);
+            assert!(world.0.join("minecraft").is_dir());
+        });
+    }
 }

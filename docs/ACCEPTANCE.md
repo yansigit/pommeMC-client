@@ -1,0 +1,39 @@
+# Client acceptance scenarios
+
+These scenarios are the minimum evidence required before calling a protocol
+version playable. They are intentionally separated from unit tests because
+they exercise the public client connection path and a running server.
+
+## Local deterministic gate
+
+Run the real integrated-server scenario with:
+
+```sh
+cargo test -p pomme-client --all-features integrated_server_acceptance_reaches_gameplay -- --ignored --nocapture
+```
+
+The scenario launches SteelMC through `pomme_singleplayer::launch`, uses the
+same `Transport::Memory` and `spawn_connection` path as the application, waits
+with bounded polling instead of a fixed startup delay, and isolates its temporary world directory. It
+asserts:
+
+- the integrated server reaches `Progress::Ready` within 120 seconds;
+- the client emits `Connected` and `PlayerLogin`;
+- dimension information and at least one chunk arrive within 60 seconds;
+- a server disconnect during the flow fails the test with its reason;
+- the generated world is saved and cleaned up.
+
+## Required server-backed scenarios
+
+The following scenarios remain required for a validated release tier:
+
+1. Login and configuration, including encryption and resource-pack policy.
+2. World loading, light updates, movement, collision, mining, placement, and item use.
+3. Inventory transactions, every supported container, merchant trades, and rejected actions.
+4. Chat, signed chat, signed commands, suggestions, and last-seen acknowledgements.
+5. Entities, effects, vehicles, dimensions, death, respawn, and forced disconnect.
+6. Explicit Retry behavior, including a failed retry and a successful retry.
+
+Each scenario must use a bounded timeout, capture the protocol/version, and
+report the first failing event or packet. Passing unit tests alone is not a
+substitute for this matrix.
