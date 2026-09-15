@@ -27,7 +27,6 @@ struct ChatSigningState {
     account_uuid: uuid::Uuid,
     session_id: uuid::Uuid,
     certificates: azalea_auth::certs::Certificates,
-    salt: u64,
     message_index: u32,
 }
 
@@ -40,7 +39,6 @@ impl ChatSigningState {
             account_uuid,
             session_id: uuid::Uuid::new_v4(),
             certificates,
-            salt: azalea_crypto::signing::make_salt(),
             message_index: 0,
         }
     }
@@ -67,13 +65,14 @@ impl ChatSigningState {
         &mut self,
         content: &str,
         timestamp: std::time::SystemTime,
+        salt: u64,
     ) -> azalea_crypto::signing::MessageSignature {
         let signature = azalea_crypto::signing::sign_chat_message(
             &azalea_crypto::signing::SignChatMessageOptions {
                 account_uuid: self.account_uuid,
                 chat_session_uuid: self.session_id,
                 message_index: self.message_index,
-                salt: self.salt,
+                salt,
                 timestamp,
                 message: content.to_owned(),
                 private_key: self.certificates.private_key.clone(),
@@ -88,14 +87,15 @@ impl ChatSigningState {
         message: String,
         timestamp: std::time::SystemTime,
     ) -> ServerboundGamePacket {
-        let signature = self.sign_content(&message, timestamp);
+        let salt = azalea_crypto::signing::make_salt();
+        let signature = self.sign_content(&message, timestamp, salt);
         ServerboundGamePacket::Chat(azalea_protocol::packets::game::s_chat::ServerboundChat {
             message,
             timestamp: timestamp
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64,
-            salt: self.salt,
+            salt,
             signature: Some(signature),
             last_seen_messages: Default::default(),
         })
@@ -107,12 +107,13 @@ impl ChatSigningState {
         arguments: Vec<(String, String)>,
         timestamp: std::time::SystemTime,
     ) -> ServerboundGamePacket {
+        let salt = azalea_crypto::signing::make_salt();
         let argument_signatures = arguments
             .into_iter()
             .map(|(name, value)| {
                 azalea_protocol::packets::game::s_chat_command_signed::ArgumentSignature {
                     name,
-                    signature: self.sign_content(&value, timestamp),
+                    signature: self.sign_content(&value, timestamp, salt),
                 }
             })
             .collect();
@@ -123,7 +124,7 @@ impl ChatSigningState {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_millis() as u64,
-                salt: self.salt,
+                salt,
                 argument_signatures,
                 last_seen_messages: Default::default(),
             },
