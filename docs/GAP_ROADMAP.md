@@ -9,6 +9,13 @@ It is intentionally stricter than a feature checklist. A gap is closed only when
 its user-visible behavior is exercised through the public client path with a
 bounded, reproducible test.
 
+> **Implementation status: open.** This is a researched implementation plan, not
+> a completion report. Waves 0 through 8 remain to be implemented. The work that
+> accompanied this document only fixed macOS Vulkan loader linking and two
+> pre-existing Clippy ordering failures, then validated the current baseline. It
+> did not implement the protocol, physics, rendering, fluid, mob, survival, or
+> boss epics listed below.
+
 ## Scope and ordering
 
 Pomme has two related but independent products:

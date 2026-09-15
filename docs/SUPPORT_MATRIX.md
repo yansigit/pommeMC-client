@@ -50,3 +50,4 @@ AI, spawning rules, combat encounter, progression, or persistence behavior.
 
 The dependency-ordered implementation and validation plan for closing these
 client and integrated-server gaps is maintained in [`GAP_ROADMAP.md`](GAP_ROADMAP.md).
+It is a roadmap, not a statement that those gaps are already implemented or closed.
