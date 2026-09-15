@@ -712,9 +712,8 @@ impl InteractionState {
                 seq: self.seq,
             }));
             // A menu-opening block consumes the click (vanilla `useWithoutItem`)
-            // unless sneaking with something in hand.
-            // TODO: other interactive blocks (brewing stand, dispenser, ...)
-            // should consume the click here too once their menus render.
+            // unless sneaking with something in hand. The complete supported
+            // workstation list is centralized in `opens_menu` below.
             if !suppress_block_use {
                 let target =
                     chunks.get_block_state(hit.block_pos.x, hit.block_pos.y, hit.block_pos.z);

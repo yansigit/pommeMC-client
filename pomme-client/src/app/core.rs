@@ -1105,10 +1105,8 @@ impl AppCore {
                         game.container_was_open = Some(container_id);
                         self.apply_cursor_grab(window, Some(game));
                     } else {
-                        // TODO: render the remaining specialized menu screens.
-                        // Until then tell the server we
-                        // closed the menu so its container state stays
-                        // consistent.
+                        // Keep the server-side container state consistent if a
+                        // future protocol adds a menu kind not rendered here.
                         use azalea_protocol::packets::game::s_container_close::ServerboundContainerClose;
                         connection
                             .packet_tx
