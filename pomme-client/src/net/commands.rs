@@ -76,20 +76,19 @@ impl CommandTree {
             .unwrap_or_default()
     }
 
-    /// Whether parsing `command` walks through an argument whose parser is
-    /// `Message` — the only signable argument type. Mirrors vanilla
-    /// `SignableCommand.of`: such commands must be sent signed once a chat
-    /// session exists. Returns `false` on any parse miss, leaving validation to
-    /// the server (matching vanilla, which sends unsigned when unsure).
-    pub fn has_signable_args(&self, command: &str) -> bool {
+    /// Extract the message arguments that vanilla signs for `command`.
+    /// Brigadier's `message` parser consumes the remainder of the command, so
+    /// the current token and all following tokens form one argument value.
+    pub fn signable_arguments(&self, command: &str) -> Vec<(String, String)> {
+        let tokens: Vec<&str> = command.split_whitespace().collect();
         let mut current = self.root_index;
-        for token in command.split_whitespace() {
+        for (position, token) in tokens.iter().enumerate() {
             let Some(node) = self.node(current) else {
-                return false;
+                return Vec::new();
             };
             let child_ids = self.effective_children(node);
             let Some(cid) = self.descend(child_ids, token) else {
-                return false;
+                return Vec::new();
             };
             if matches!(
                 self.node(cid).map(|c| &c.node_type),
@@ -98,11 +97,15 @@ impl CommandTree {
                     ..
                 })
             ) {
-                return true;
+                let Some(NodeType::Argument { name, .. }) = self.node(cid).map(|c| &c.node_type)
+                else {
+                    return Vec::new();
+                };
+                return vec![(name.clone(), tokens[position..].join(" "))];
             }
             current = cid;
         }
-        false
+        Vec::new()
     }
 
     /// Local completions for `command` (the chat input with the leading `/`
@@ -242,7 +245,7 @@ mod tests {
             literal("day", vec![], true),
         ]);
         assert_eq!(t.root_child_names(), vec!["time".to_string()]);
-        assert!(!t.has_signable_args("time set day"));
+        assert!(t.signable_arguments("time set day").is_empty());
     }
 
     #[test]
@@ -254,16 +257,19 @@ mod tests {
             argument("target", BrigadierParser::GameProfile, vec![3], false),
             argument("message", BrigadierParser::Message, vec![], true),
         ]);
-        assert!(t.has_signable_args("msg Steve hello there"));
+        assert_eq!(
+            t.signable_arguments("msg Steve hello there"),
+            vec![("message".to_string(), "hello there".to_string())]
+        );
         // The message token has not been supplied yet, so nothing to sign.
-        assert!(!t.has_signable_args("msg Steve"));
-        assert!(!t.has_signable_args("msg"));
+        assert!(t.signable_arguments("msg Steve").is_empty());
+        assert!(t.signable_arguments("msg").is_empty());
     }
 
     #[test]
     fn unknown_command_is_not_signable() {
         let t = tree(vec![root(vec![1]), literal("time", vec![], true)]);
-        assert!(!t.has_signable_args("nonexistent foo"));
+        assert!(t.signable_arguments("nonexistent foo").is_empty());
     }
 
     #[test]

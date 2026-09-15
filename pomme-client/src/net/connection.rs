@@ -63,11 +63,11 @@ impl ChatSigningState {
         )
     }
 
-    fn sign_message(
+    fn sign_content(
         &mut self,
-        message: String,
+        content: &str,
         timestamp: std::time::SystemTime,
-    ) -> ServerboundGamePacket {
+    ) -> azalea_crypto::signing::MessageSignature {
         let signature = azalea_crypto::signing::sign_chat_message(
             &azalea_crypto::signing::SignChatMessageOptions {
                 account_uuid: self.account_uuid,
@@ -75,11 +75,20 @@ impl ChatSigningState {
                 message_index: self.message_index,
                 salt: self.salt,
                 timestamp,
-                message: message.clone(),
+                message: content.to_owned(),
                 private_key: self.certificates.private_key.clone(),
             },
         );
         self.message_index = self.message_index.saturating_add(1);
+        signature
+    }
+
+    fn sign_message(
+        &mut self,
+        message: String,
+        timestamp: std::time::SystemTime,
+    ) -> ServerboundGamePacket {
+        let signature = self.sign_content(&message, timestamp);
         ServerboundGamePacket::Chat(azalea_protocol::packets::game::s_chat::ServerboundChat {
             message,
             timestamp: timestamp
@@ -90,6 +99,35 @@ impl ChatSigningState {
             signature: Some(signature),
             last_seen_messages: Default::default(),
         })
+    }
+
+    fn sign_command(
+        &mut self,
+        command: String,
+        arguments: Vec<(String, String)>,
+        timestamp: std::time::SystemTime,
+    ) -> ServerboundGamePacket {
+        let argument_signatures = arguments
+            .into_iter()
+            .map(|(name, value)| {
+                azalea_protocol::packets::game::s_chat_command_signed::ArgumentSignature {
+                    name,
+                    signature: self.sign_content(&value, timestamp),
+                }
+            })
+            .collect();
+        ServerboundGamePacket::ChatCommandSigned(
+            azalea_protocol::packets::game::s_chat_command_signed::ServerboundChatCommandSigned {
+                command,
+                timestamp: timestamp
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64,
+                salt: self.salt,
+                argument_signatures,
+                last_seen_messages: Default::default(),
+            },
+        )
     }
 }
 
@@ -894,30 +932,42 @@ async fn game_loop(
         while let Ok(msg) = chat_rx.recv() {
             let packet = if let Some(command) = msg.strip_prefix('/') {
                 tracing::info!("Sending command: {command:?}");
-                let signable = chat_tree
+                let signable_arguments = chat_tree
                     .lock()
                     .as_ref()
-                    .map(|tree| tree.has_signable_args(command))
-                    .unwrap_or(false);
-                if signable {
-                    tracing::warn!(
-                        "Command has signable arguments but chat signing is not implemented"
-                    );
-                    if chat_secure_required.load(Ordering::Acquire) {
-                        let _ = chat_event_tx.try_send(NetworkEvent::ChatMessage {
-                            spans: vec![crate::ui::text::TextSpan::new(
-                                "Chat disabled: this server requires signed commands, which this client does not support yet.".into(),
-                                [1.0, 0.35, 0.35, 1.0],
-                            )],
-                        });
-                        continue;
+                    .map(|tree| tree.signable_arguments(command))
+                    .unwrap_or_default();
+                if !signable_arguments.is_empty() {
+                    if let Some(state) = &chat_signing_state {
+                        let timestamp = std::time::SystemTime::now();
+                        let mut state = state.lock();
+                        state.sign_command(command.to_string(), signable_arguments, timestamp)
+                    } else {
+                        tracing::warn!(
+                            "Command has signable arguments but chat signing is unavailable"
+                        );
+                        if chat_secure_required.load(Ordering::Acquire) {
+                            let _ = chat_event_tx.try_send(NetworkEvent::ChatMessage {
+                                spans: vec![crate::ui::text::TextSpan::new(
+                                    "Chat disabled: this server requires signed commands, which this client does not support yet.".into(),
+                                    [1.0, 0.35, 0.35, 1.0],
+                                )],
+                            });
+                            continue;
+                        }
+                        ServerboundGamePacket::ChatCommand(
+                            azalea_protocol::packets::game::s_chat_command::ServerboundChatCommand {
+                                command: command.to_string(),
+                            },
+                        )
                     }
+                } else {
+                    ServerboundGamePacket::ChatCommand(
+                        azalea_protocol::packets::game::s_chat_command::ServerboundChatCommand {
+                            command: command.to_string(),
+                        },
+                    )
                 }
-                ServerboundGamePacket::ChatCommand(
-                    azalea_protocol::packets::game::s_chat_command::ServerboundChatCommand {
-                        command: command.to_string(),
-                    },
-                )
             } else {
                 if chat_secure_required.load(Ordering::Acquire) && chat_signing_state.is_none() {
                     let _ = chat_event_tx.try_send(NetworkEvent::ChatMessage {
