@@ -51,6 +51,7 @@ cargo run -p pomme-client -- \
 # Use a temporary --game-dir in CI to discard the generated world afterward.
 cargo run -p pomme-client -- \
   --quick-access-singleplayer \
+  --showcase-copper-golem-statues \
   --capture-gameplay-frame \
   --exit-after-screenshot
 ```
@@ -62,6 +63,12 @@ multiplayer command needs a server. The singleplayer command starts SteelMC
 in-process and validates the loaded-world render boundary without menu input,
 but neither gameplay command proves pixel parity or general gameplay. Review
 the PNG or compare it with a platform-specific baseline separately.
+
+`--showcase-copper-golem-statues` builds a deterministic platform at the
+integrated world's spawn and places the standing, running, sitting, and star
+poses using the unaffected, exposed, weathered, and oxidized textures. This
+exercises the real server chunk/block-entity stream and normal gameplay draw
+path while keeping the capture free of synthetic input.
 
 The CLI rejects names outside Minecraft's 3-16 character ASCII grammar before
 the login packet is sent. For example, the former `VisualAcceptance2` test name

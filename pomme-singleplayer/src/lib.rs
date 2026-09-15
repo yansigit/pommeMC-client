@@ -12,17 +12,24 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, sync_channel};
 use std::thread::{self, JoinHandle};
 
+use steel_core::chunk::chunk_request::{ChunkRequest, ChunkTicketKind, ReadyChunks};
+use steel_core::chunk::status::ChunkStatus;
 use steel_core::command::CommandRegistry;
 use steel_core::config::{
     DomainConfig, RuntimeConfig, StorageSelection, WorldEntryConfig, WorldsConfig,
 };
 use steel_core::permission::{PermissionGroupManager, PermissionGroupsConfig};
 use steel_core::server::Server;
+use steel_core::server::jobs::{ChunkRequestJob, ServerJobContext};
 use steel_login::{JavaTcpClient, ServerConnectionSession};
-use steel_utils::Identifier;
+use steel_registry::vanilla_game_rules::RESPAWN_RADIUS;
+use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::threading::{available_worker_threads, worker_threads_for_available};
+use steel_utils::types::UpdateFlags;
+use steel_utils::{BlockPos, ChunkPos, Identifier};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::runtime::{Builder, Runtime};
+use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
@@ -46,6 +53,14 @@ pub struct LaunchOptions {
     /// Radius the server ticks entities and blocks in.
     pub simulation_distance: u8,
     pub transport: ServerTransport,
+    /// Optional deterministic content used by public graphical acceptance
+    /// paths. Normal singleplayer launches leave this unset.
+    pub fixture: Option<LaunchFixture>,
+}
+
+#[derive(Clone, Copy)]
+pub enum LaunchFixture {
+    CopperGolemStatues,
 }
 
 /// How far along a launch is, as of the last [`PendingWorld::poll`].
@@ -206,11 +221,28 @@ async fn serve(
         return;
     };
 
+    let fixture_ready = options
+        .fixture
+        .map(|fixture| schedule_fixture(&server, fixture));
+
     let running = tokio::spawn({
         let server = Arc::clone(&server);
         let cancel = cancel.clone();
         async move { server.run(cancel).await }
     });
+
+    if let Some(fixture_ready) = fixture_ready {
+        let installed = tokio::select! {
+            result = fixture_ready => result.map_err(|_| "graphics fixture job stopped before completion".to_owned()).and_then(|result| result),
+            () = cancel.cancelled() => Err("graphics fixture installation was cancelled".to_owned()),
+        };
+        if report_failure(started, installed).is_none() {
+            cancel.cancel();
+            let _ = running.await;
+            server.save_and_shutdown().await;
+            return;
+        }
+    }
 
     let tasks = TaskTracker::new();
     let (client, outgoing, incoming) = JavaTcpClient::from_transport(
@@ -266,6 +298,143 @@ async fn open_world(
         server.save_and_shutdown().await;
         Err("failed to prepare the spawn area".to_owned())
     }
+}
+
+fn schedule_fixture(
+    server: &Arc<Server>,
+    fixture: LaunchFixture,
+) -> oneshot::Receiver<Result<(), String>> {
+    let world = server
+        .worlds
+        .server_default_world()
+        .expect("the default world was checked while opening the integrated server");
+    let spawn = world.level_data.read().data().spawn_pos();
+    let center = ChunkPos::new(spawn.x().div_euclid(16), spawn.z().div_euclid(16));
+    let positions = (-1..=1)
+        .flat_map(|dz| (-1..=1).map(move |dx| ChunkPos::new(center.0.x + dx, center.0.y + dz)))
+        .collect::<Vec<_>>();
+    let request = world.chunk_map.request_chunks(ChunkRequest {
+        status: ChunkStatus::Full,
+        positions: positions.clone(),
+        ticket_kind: ChunkTicketKind::Command,
+    });
+    let (sender, receiver) = oneshot::channel();
+    server.jobs.spawn(ChunkRequestJob::new(
+        request,
+        move |context: &mut ServerJobContext, ready_chunks: ReadyChunks| {
+            let result = context
+                .server()
+                .ok_or_else(|| "integrated server stopped before fixture installation".to_owned())
+                .and_then(|server| apply_fixture(&server, fixture, &ready_chunks, &positions));
+            if let Err(error) = &result {
+                tracing::error!("Failed to install graphics fixture: {error}");
+            }
+            let _ = sender.send(result);
+        },
+    ));
+    receiver
+}
+
+fn apply_fixture(
+    server: &Arc<Server>,
+    fixture: LaunchFixture,
+    ready_chunks: &ReadyChunks,
+    positions: &[ChunkPos],
+) -> Result<(), String> {
+    let world = server
+        .worlds
+        .server_default_world()
+        .cloned()
+        .ok_or_else(|| "integrated server has no default world".to_owned())?;
+
+    match fixture {
+        LaunchFixture::CopperGolemStatues => {
+            // Keep the player at the fixture center and give the default
+            // south-facing camera a clear, evenly lit view of all four poses.
+            let fixture_spawn = {
+                let mut level_data = world.level_data.write();
+                if !world.set_game_rule_with_guard(&RESPAWN_RADIUS, 0, &mut level_data) {
+                    return Err("failed to set the graphics fixture spawn radius".to_owned());
+                }
+                // Raise the small platform above generated terrain instead of
+                // clearing a large volume. This keeps fixture installation fast.
+                let fixture_spawn = level_data.data().spawn_pos().offset(0, 6, 0);
+                level_data.data_mut().set_spawn_pos(fixture_spawn);
+                level_data.data_mut().spawn.angle = 0.0;
+                fixture_spawn
+            };
+            for dx in -4..=4 {
+                for dz in -1..=5 {
+                    set_fixture_block(
+                        ready_chunks,
+                        positions,
+                        fixture_spawn.offset(dx, 0, dz),
+                        vanilla_blocks::SMOOTH_STONE.default_state(),
+                    )?;
+                    for dy in 1..=3 {
+                        set_fixture_block(
+                            ready_chunks,
+                            positions,
+                            fixture_spawn.offset(dx, dy, dz),
+                            vanilla_blocks::AIR.default_state(),
+                        )?;
+                    }
+                }
+            }
+
+            let statues = [
+                (&vanilla_blocks::COPPER_GOLEM_STATUE, "standing"),
+                (&vanilla_blocks::EXPOSED_COPPER_GOLEM_STATUE, "running"),
+                (&vanilla_blocks::WEATHERED_COPPER_GOLEM_STATUE, "sitting"),
+                (&vanilla_blocks::OXIDIZED_COPPER_GOLEM_STATUE, "star"),
+            ];
+            for ((block, pose), dx) in statues.into_iter().zip([-3, -1, 1, 3]) {
+                let state = REGISTRY
+                    .blocks
+                    .state_id_from_block_defaulted_properties(
+                        block,
+                        [("copper_golem_pose", pose), ("facing", "north")],
+                    )
+                    .ok_or_else(|| format!("failed to build {pose} copper golem statue state"))?;
+                set_fixture_block(
+                    ready_chunks,
+                    positions,
+                    fixture_spawn.offset(dx, 1, 4),
+                    state,
+                )?;
+            }
+            tracing::info!(
+                "Installed copper golem graphics fixture at {:?}",
+                BlockPos::new(
+                    fixture_spawn.x(),
+                    fixture_spawn.y() + 1,
+                    fixture_spawn.z() + 4
+                )
+            );
+        }
+    }
+    Ok(())
+}
+
+fn set_fixture_block(
+    ready_chunks: &ReadyChunks,
+    positions: &[ChunkPos],
+    pos: BlockPos,
+    state: steel_utils::BlockStateId,
+) -> Result<(), String> {
+    let chunk_pos = ChunkPos::from_block_pos(pos);
+    let holder = positions
+        .iter()
+        .position(|candidate| *candidate == chunk_pos)
+        .and_then(|index| ready_chunks.holders.get(index))
+        .ok_or_else(|| format!("graphics fixture did not request chunk {chunk_pos:?}"))?;
+    let chunk = holder
+        .try_full_chunk()
+        .ok_or_else(|| format!("graphics fixture chunk {chunk_pos:?} is not fully loaded"))?;
+    let _ = chunk.set_block_state(pos, state, UpdateFlags::UPDATE_NONE);
+    (chunk.get_block_state(pos) == state)
+        .then_some(())
+        .ok_or_else(|| format!("failed to set graphics fixture block at {pos:?}"))
 }
 
 fn runtime_config(options: &LaunchOptions, chunk_threads: usize) -> RuntimeConfig {
@@ -359,6 +528,7 @@ mod tests {
                 read: Box::new(tokio::io::empty()),
                 write: Box::new(tokio::io::sink()),
             },
+            fixture: None,
         });
 
         let handle = loop {

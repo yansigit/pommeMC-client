@@ -1415,7 +1415,7 @@ impl Renderer {
         }
 
         if hide_cursor {
-            window.set_cursor_visible(false);
+            crate::util::set_cursor_visible(window, false);
         }
 
         self.ctx.device.reset_fences(&[fence])?;

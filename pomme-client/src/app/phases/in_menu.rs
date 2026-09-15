@@ -143,7 +143,7 @@ pub fn update_menu(
             core.clear_remote_target();
             #[cfg(feature = "singleplayer")]
             {
-                let transport = core.launch_singleplayer(save_path, seed);
+                let transport = core.launch_singleplayer(save_path, seed, None);
                 let connect_args = ConnectArgs {
                     transport,
                     username: core.user.username.clone(),

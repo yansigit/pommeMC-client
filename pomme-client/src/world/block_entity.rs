@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use azalea_block::BlockState;
 use azalea_core::position::BlockPos;
 use azalea_registry::builtin::BlockEntityKind;
+use azalea_world::chunk::Chunk;
+use azalea_world::palette::Palette;
 use simdnbt::owned::NbtCompound;
 
 #[derive(Clone)]
@@ -69,6 +71,45 @@ pub fn sync_block_entity(
         // A synthesized entry is also stale when the block swaps directly to a
         // different block-entity block (e.g. /setblock chest -> sign).
         map.remove(&pos);
+    }
+}
+
+/// Adds client-rendered block entities found in an initial chunk snapshot when
+/// the server omitted their NBT entry. Vanilla constructs these from the block
+/// state, and [`sync_block_entity`] already does the same for later updates.
+pub fn synthesize_rendered_in_chunk(
+    map: &mut HashMap<BlockPos, StoredBlockEntity>,
+    chunk_pos: azalea_core::position::ChunkPos,
+    chunk: &Chunk,
+    min_y: i32,
+) {
+    let is_rendered_state =
+        |state: BlockState| rendered_kind(crate::world::block::block_id(state)).is_some();
+
+    for (section_index, section) in chunk.sections.iter().enumerate() {
+        let may_contain_rendered = match &section.states.palette {
+            Palette::SingleValue(state) => is_rendered_state(*state),
+            Palette::Linear(states) | Palette::Hashmap(states) => {
+                states.iter().copied().any(is_rendered_state)
+            }
+            Palette::Global => true,
+        };
+        if !may_contain_rendered {
+            continue;
+        }
+
+        for index in 0..4096 {
+            let state = section.states.get_at_index(index);
+            if !is_rendered_state(state) {
+                continue;
+            }
+            let pos = BlockPos {
+                x: chunk_pos.x * 16 + (index & 15) as i32,
+                y: min_y + section_index as i32 * 16 + ((index >> 8) & 15) as i32,
+                z: chunk_pos.z * 16 + ((index >> 4) & 15) as i32,
+            };
+            sync_block_entity(map, pos, state);
+        }
     }
 }
 
@@ -146,6 +187,8 @@ pub fn is_fluid_block(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use azalea_world::chunk::Section;
+
     use super::*;
 
     #[test]
@@ -166,5 +209,38 @@ mod tests {
             );
             assert!(is_block_entity_block(name));
         }
+    }
+
+    #[test]
+    fn initial_chunk_synthesizes_rendered_block_entities_from_states() {
+        crate::world::block::init("26.2");
+        let statue = crate::world::block::first_state_of("copper_golem_statue").unwrap();
+        let mut section = Section::default();
+        section.states.set_at_index(0x321, statue);
+        section.block_count = 1;
+        let chunk = Chunk {
+            sections: vec![section].into_boxed_slice(),
+            heightmaps: Default::default(),
+        };
+        let mut entries = HashMap::new();
+
+        synthesize_rendered_in_chunk(
+            &mut entries,
+            azalea_core::position::ChunkPos::new(2, -1),
+            &chunk,
+            -64,
+        );
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries
+                .get(&BlockPos {
+                    x: 33,
+                    y: -61,
+                    z: -14
+                })
+                .map(|entry| entry.kind),
+            Some(BlockEntityKind::CopperGolemStatue)
+        );
     }
 }

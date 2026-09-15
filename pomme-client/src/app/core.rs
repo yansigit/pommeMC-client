@@ -369,6 +369,7 @@ impl AppCore {
         &mut self,
         save_path: std::path::PathBuf,
         seed: i64,
+        fixture: Option<pomme_singleplayer::LaunchFixture>,
     ) -> crate::net::connection::Transport {
         // A previous launch can only still exist if the user selected a world
         // twice without entering a connection phase. Stop it before replacing
@@ -384,6 +385,7 @@ impl AppCore {
                 read: Box::new(server_end.rx),
                 write: Box::new(server_end.tx),
             },
+            fixture,
         });
         self.pending_singleplayer = Some(pending);
         crate::net::connection::Transport::Memory(client_end)
@@ -442,7 +444,7 @@ impl AppCore {
             let _ = window
                 .set_cursor_grab(CursorGrabMode::Locked)
                 .or_else(|_| window.set_cursor_grab(CursorGrabMode::Confined));
-            window.set_cursor_visible(false);
+            crate::util::set_cursor_visible(window, false);
         } else {
             self.release_cursor(window);
         }
@@ -468,7 +470,7 @@ impl AppCore {
     /// cursor instead of wherever the last one closed).
     fn release_cursor(&mut self, window: &Window) {
         let _ = window.set_cursor_grab(CursorGrabMode::None);
-        window.set_cursor_visible(true);
+        crate::util::set_cursor_visible(window, true);
         self.center_cursor(window);
     }
 
@@ -1221,6 +1223,8 @@ impl AppCore {
                     }
                 }
                 NetworkEvent::BlockEntitySync { chunk_pos, entries } => {
+                    let loaded_chunk = game.chunk_store.get_chunk(&chunk_pos);
+                    let min_y = game.chunk_store.min_y();
                     game.chunk_store.block_entities.retain(|p, _| {
                         p.x.div_euclid(16) != chunk_pos.x || p.z.div_euclid(16) != chunk_pos.z
                     });
@@ -1229,6 +1233,14 @@ impl AppCore {
                         game.chunk_store.block_entities.insert(
                             pos,
                             crate::world::block_entity::StoredBlockEntity { kind, nbt },
+                        );
+                    }
+                    if let Some(chunk) = loaded_chunk {
+                        crate::world::block_entity::synthesize_rendered_in_chunk(
+                            &mut game.chunk_store.block_entities,
+                            chunk_pos,
+                            &chunk.read(),
+                            min_y,
                         );
                     }
                 }

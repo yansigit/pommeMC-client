@@ -43,6 +43,15 @@ pub struct LaunchArgs {
     #[arg(long)]
     pub capture_gameplay_frame: bool,
 
+    /// Place all four copper golem statue poses in the automated integrated
+    /// world before capturing gameplay.
+    #[arg(
+        long,
+        requires = "quick_access_singleplayer",
+        requires = "capture_gameplay_frame"
+    )]
+    pub showcase_copper_golem_statues: bool,
+
     /// Exit after the requested screenshot has been written.
     #[arg(long)]
     pub exit_after_screenshot: bool,

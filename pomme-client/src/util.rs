@@ -1,5 +1,42 @@
 //! Small shared utilities.
 
+use winit::window::Window;
+
+/// Show or hide the system cursor without asking winit to build its transparent
+/// GIF cursor on macOS. That winit 0.30 path can crash inside ImageIO on
+/// current macOS releases. `NSCursor::hide` is counted, so suppress duplicate
+/// state changes to keep hide/unhide balanced across the render loop.
+pub fn set_cursor_visible(window: &Window, visible: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        use objc2_app_kit::NSCursor;
+
+        static HIDDEN: AtomicBool = AtomicBool::new(false);
+        let hidden = !visible;
+        if HIDDEN.swap(hidden, Ordering::Relaxed) == hidden {
+            return;
+        }
+
+        // SAFETY: AppKit cursor methods must run on the main thread. All callers
+        // are reached from winit's main-thread application/render callbacks.
+        unsafe {
+            if visible {
+                NSCursor::unhide();
+            } else {
+                NSCursor::hide();
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    window.set_cursor_visible(visible);
+
+    #[cfg(target_os = "macos")]
+    let _ = window;
+}
+
 /// Java `java.util.Random` (`LegacyRandomSource`) reimplementation: a 48-bit
 /// LCG matching the JVM bit-for-bit so seeded sequences line up with vanilla.
 ///

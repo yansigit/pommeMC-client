@@ -807,6 +807,10 @@ impl InputState {
         self.cursor_pos
     }
 
+    pub fn set_cursor_captured(&mut self, captured: bool) {
+        self.cursor_captured = captured;
+    }
+
     pub fn is_cursor_captured(&self) -> bool {
         self.cursor_captured
     }

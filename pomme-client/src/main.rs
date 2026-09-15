@@ -147,6 +147,7 @@ fn main() {
         args.quick_access_singleplayer,
         args.capture_first_frame,
         args.capture_gameplay_frame,
+        args.showcase_copper_golem_statues,
         args.exit_after_screenshot,
     )
     .run()

@@ -1770,6 +1770,7 @@ mod tests {
                     read: Box::new(server_end.rx),
                     write: Box::new(server_end.tx),
                 },
+                fixture: None,
             });
 
             let startup = tokio::time::timeout(Duration::from_secs(120), async {

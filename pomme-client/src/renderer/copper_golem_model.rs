@@ -5,6 +5,11 @@
 //! and rotates it by PI around Z, so the block-entity y-down convention omits
 //! the normal living-entity ground-plane rebase.
 
+// These values are copied from Mojang's generated model layer as f32 literals.
+// Preserve them verbatim so future comparisons against the vanilla export stay
+// mechanical rather than normalizing each constant to Clippy's preferred form.
+#![allow(clippy::excessive_precision)]
+
 use glam::Vec3;
 
 use super::entity_model::{BakedEntityModel, EntityPart, ModelConvention, ModelCube, bake_model};

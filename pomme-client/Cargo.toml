@@ -74,3 +74,9 @@ libloading = "0.8"
 symphonia = { version = "0.5.5", default-features = false, features = ["ogg", "vorbis"] }
 fastrand = "2"
 gilrs = "0.11.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# winit 0.30 hides the cursor by decoding an embedded transparent GIF. Some
+# current macOS ImageIO builds crash in that decoder, so use NSCursor's native
+# hide/unhide API instead.
+objc2-app-kit = { version = "0.2.2", features = ["NSCursor"] }

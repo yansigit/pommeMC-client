@@ -5181,6 +5181,7 @@ dependencies = [
  "libloading 0.8.9",
  "md-5 0.11.0",
  "mimalloc",
+ "objc2-app-kit 0.2.2",
  "open",
  "parking_lot",
  "png 0.17.16",
@@ -5272,6 +5273,7 @@ version = "0.1.0"
 dependencies = [
  "steel-core",
  "steel-login",
+ "steel-registry",
  "steel-utils",
  "tokio",
  "tokio-util",

@@ -49,6 +49,10 @@ pub struct App {
     fps_limiter: FramerateLimiter,
     capture_first_frame: bool,
     capture_gameplay_frame: bool,
+    gameplay_capture_wait_frames: u8,
+    restore_cursor_after_screenshot: bool,
+    #[cfg(feature = "singleplayer")]
+    showcase_copper_golem_statues: bool,
     exit_after_screenshot: bool,
 }
 
@@ -109,6 +113,10 @@ impl FramerateLimiter {
 }
 
 impl App {
+    // The application root receives the already-validated launcher inputs and
+    // automation switches directly; grouping them would only move this one
+    // bootstrap call into a second configuration type.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         version: String,
         data_dirs: DataDirs,
@@ -119,6 +127,7 @@ impl App {
         quick_access_singleplayer: bool,
         capture_first_frame: bool,
         capture_gameplay_frame: bool,
+        showcase_copper_golem_statues: bool,
         exit_after_screenshot: bool,
     ) -> Self {
         Self {
@@ -132,6 +141,10 @@ impl App {
             fps_limiter: FramerateLimiter::new(),
             capture_first_frame,
             capture_gameplay_frame,
+            gameplay_capture_wait_frames: if showcase_copper_golem_statues { 60 } else { 0 },
+            restore_cursor_after_screenshot: false,
+            #[cfg(feature = "singleplayer")]
+            showcase_copper_golem_statues,
             exit_after_screenshot,
         }
     }
@@ -281,7 +294,10 @@ impl ApplicationHandler for App {
                             .game_dir
                             .join("saves")
                             .join("pomme-automated");
-                        let transport = self.core.launch_singleplayer(save_path, 1);
+                        let fixture = self
+                            .showcase_copper_golem_statues
+                            .then_some(pomme_singleplayer::LaunchFixture::CopperGolemStatues);
+                        let transport = self.core.launch_singleplayer(save_path, 1, fixture);
                         let connection = spawn_connection(
                             &self.core.tokio_rt,
                             ConnectArgs {
@@ -614,6 +630,7 @@ impl ApplicationHandler for App {
 
                 let core = &mut self.core;
                 let capture_gameplay_frame = self.capture_gameplay_frame;
+                let gameplay_capture_wait_frames = self.gameplay_capture_wait_frames;
 
                 let should_apply_cursor_grab = core.input.update(&mut self.phase);
                 if should_apply_cursor_grab
@@ -704,7 +721,7 @@ impl ApplicationHandler for App {
                                 AppPhase::InMenu { gfx, panorama }
                             }
                             ConnectingUpdateResult::JoinGame => {
-                                if capture_gameplay_frame {
+                                if capture_gameplay_frame && gameplay_capture_wait_frames == 0 {
                                     gfx.renderer.request_screenshot();
                                 }
                                 if let Some(p) = &mut core.presence {
@@ -713,7 +730,17 @@ impl ApplicationHandler for App {
                                 // In-game screens use the plain arrow like vanilla, not
                                 // the pointer the branded menu may have left set.
                                 gfx.window.set_cursor(winit::window::CursorIcon::Default);
-                                core.apply_cursor_grab(&gfx.window, Some(&mut game));
+                                if capture_gameplay_frame {
+                                    // Automated captures do not need relative mouse input. Keeping
+                                    // the cursor released also avoids winit 0.30's macOS invisible-
+                                    // cursor image crash on current ImageIO builds.
+                                    core.input.set_cursor_captured(false);
+                                    core.apply_cursor_grab(&gfx.window, None);
+                                    self.restore_cursor_after_screenshot =
+                                        !self.exit_after_screenshot;
+                                } else {
+                                    core.apply_cursor_grab(&gfx.window, Some(&mut game));
+                                }
 
                                 AppPhase::InGame {
                                     gfx,
@@ -761,16 +788,33 @@ impl ApplicationHandler for App {
                 });
 
                 if capture_gameplay_frame && matches!(self.phase.get(), AppPhase::InGame { .. }) {
-                    self.capture_gameplay_frame = false;
+                    if self.gameplay_capture_wait_frames > 0 {
+                        self.gameplay_capture_wait_frames -= 1;
+                        if self.gameplay_capture_wait_frames == 0 {
+                            if let Some(gfx) = self.phase.gfx_mut() {
+                                gfx.renderer.request_screenshot();
+                            }
+                            self.capture_gameplay_frame = false;
+                        }
+                    } else {
+                        self.capture_gameplay_frame = false;
+                    }
                 }
 
-                if self.exit_after_screenshot
-                    && self
-                        .phase
-                        .gfx_mut()
-                        .is_some_and(|gfx| gfx.renderer.screenshot_completed())
-                {
-                    event_loop.exit();
+                let screenshot_completed = self
+                    .phase
+                    .gfx_mut()
+                    .is_some_and(|gfx| gfx.renderer.screenshot_completed());
+                if screenshot_completed {
+                    if self.exit_after_screenshot {
+                        event_loop.exit();
+                    } else if self.restore_cursor_after_screenshot
+                        && let AppPhase::InGame { gfx, game, .. } = self.phase.get_mut()
+                    {
+                        self.restore_cursor_after_screenshot = false;
+                        core.input.set_cursor_captured(true);
+                        core.apply_cursor_grab(&gfx.window, Some(game));
+                    }
                 }
 
                 core.input.end_frame();
