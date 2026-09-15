@@ -38,4 +38,8 @@ pub struct LaunchArgs {
     /// Capture the first fully loaded gameplay frame after joining a server.
     #[arg(long)]
     pub capture_gameplay_frame: bool,
+
+    /// Exit after the requested screenshot has been written.
+    #[arg(long)]
+    pub exit_after_screenshot: bool,
 }

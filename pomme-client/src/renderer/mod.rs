@@ -975,6 +975,11 @@ impl Renderer {
         self.screenshot.saving()
     }
 
+    #[must_use]
+    pub fn screenshot_completed(&self) -> bool {
+        self.screenshot.completed()
+    }
+
     pub fn wait_for_all_frames(&self) {
         let _ = self
             .ctx

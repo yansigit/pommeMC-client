@@ -76,6 +76,14 @@ fn main() {
         }
     }
 
+    if args.exit_after_screenshot && !args.capture_first_frame && !args.capture_gameplay_frame {
+        eprintln!(
+            "--exit-after-screenshot requires --capture-first-frame or \
+             --capture-gameplay-frame"
+        );
+        std::process::exit(2);
+    }
+
     let user = match UserData::from_args(args.username, args.uuid, args.access_token) {
         Ok(user) => user,
         Err(e) => {
@@ -132,6 +140,7 @@ fn main() {
         args.quick_access_multiplayer,
         args.capture_first_frame,
         args.capture_gameplay_frame,
+        args.exit_after_screenshot,
     )
     .run()
     {

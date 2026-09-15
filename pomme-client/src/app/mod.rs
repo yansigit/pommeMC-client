@@ -49,6 +49,7 @@ pub struct App {
     fps_limiter: FramerateLimiter,
     capture_first_frame: bool,
     capture_gameplay_frame: bool,
+    exit_after_screenshot: bool,
 }
 
 /// Port of vanilla `FramerateLimiter`: paces to a target fps by sleeping most
@@ -117,6 +118,7 @@ impl App {
         quick_access_multiplayer: Option<String>,
         capture_first_frame: bool,
         capture_gameplay_frame: bool,
+        exit_after_screenshot: bool,
     ) -> Self {
         Self {
             phase: StateSlot::new(AppPhase::Setup {
@@ -128,6 +130,7 @@ impl App {
             fps_limiter: FramerateLimiter::new(),
             capture_first_frame,
             capture_gameplay_frame,
+            exit_after_screenshot,
         }
     }
 
@@ -708,6 +711,15 @@ impl ApplicationHandler for App {
 
                 if capture_gameplay_frame && matches!(self.phase.get(), AppPhase::InGame { .. }) {
                     self.capture_gameplay_frame = false;
+                }
+
+                if self.exit_after_screenshot
+                    && self
+                        .phase
+                        .gfx_mut()
+                        .is_some_and(|gfx| gfx.renderer.screenshot_completed())
+                {
+                    event_loop.exit();
                 }
 
                 core.input.end_frame();

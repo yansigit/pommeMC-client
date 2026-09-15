@@ -37,12 +37,15 @@ keyboard input:
 
 ```sh
 # Initializes Vulkan, renders the title screen, and writes a PNG.
-cargo run -p pomme-client -- --capture-first-frame
+cargo run -p pomme-client -- \
+  --capture-first-frame \
+  --exit-after-screenshot
 
 # With a reachable server, captures the first fully loaded gameplay frame.
 cargo run -p pomme-client -- \
   --quick-access-multiplayer 127.0.0.1:25565 \
-  --capture-gameplay-frame
+  --capture-gameplay-frame \
+  --exit-after-screenshot
 ```
 
 Captures are written to `<game directory>/screenshots` using the normal F2

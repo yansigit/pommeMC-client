@@ -28,6 +28,7 @@ pub struct ScreenshotCapture {
     pending: Vec<PendingCapture>,
     /// Encodes spawned but not yet drained from `result_rx`.
     in_flight: u32,
+    completed: bool,
     game_dir: PathBuf,
     result_tx: Sender<Result<String, String>>,
     result_rx: Receiver<Result<String, String>>,
@@ -40,6 +41,7 @@ impl ScreenshotCapture {
             armed: false,
             pending: Vec::new(),
             in_flight: 0,
+            completed: false,
             game_dir,
             result_tx,
             result_rx,
@@ -61,7 +63,15 @@ impl ScreenshotCapture {
     pub fn drain_results(&mut self) -> Vec<Result<String, String>> {
         let results: Vec<_> = self.result_rx.try_iter().collect();
         self.in_flight = self.in_flight.saturating_sub(results.len() as u32);
+        if !results.is_empty() {
+            self.completed = true;
+        }
         results
+    }
+
+    #[must_use]
+    pub fn completed(&self) -> bool {
+        self.completed
     }
 
     /// If armed, record the image->buffer copy into `cmd` after the final
