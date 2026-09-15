@@ -26,6 +26,12 @@ pub enum ContainerKind {
     Furnace,
     Chest { rows: u8 },
     Generic3x3,
+    Grindstone,
+    Lectern,
+    Loom,
+    Smithing,
+    Cartography,
+    Stonecutter,
     Hopper,
     Brewing,
     Beacon,
@@ -42,6 +48,11 @@ impl ContainerKind {
             Self::Furnace | Self::Anvil => 39,
             Self::Chest { rows } => rows as usize * 9 + 36,
             Self::Generic3x3 => 45,
+            Self::Grindstone => 39,
+            Self::Lectern => 37,
+            Self::Loom | Self::Smithing => 40,
+            Self::Cartography => 39,
+            Self::Stonecutter => 38,
             Self::Hopper => 41,
             Self::Brewing => 41,
             Self::Beacon => 37,
@@ -59,6 +70,11 @@ impl ContainerKind {
             Self::Furnace | Self::Anvil => 3,
             Self::Chest { rows } => rows as usize * 9,
             Self::Generic3x3 => 9,
+            Self::Grindstone => 3,
+            Self::Lectern => 1,
+            Self::Loom | Self::Smithing => 4,
+            Self::Cartography => 3,
+            Self::Stonecutter => 2,
             Self::Hopper => 5,
             Self::Brewing => 5,
             Self::Beacon => 1,
@@ -78,9 +94,15 @@ impl ContainerKind {
         match self {
             Self::Player | Self::CraftingTable => Some(0),
             Self::Anvil => Some(2),
+            Self::Grindstone => Some(2),
+            Self::Loom => Some(3),
+            Self::Smithing => Some(3),
+            Self::Cartography => Some(2),
+            Self::Stonecutter => Some(1),
             Self::Furnace
             | Self::Chest { .. }
             | Self::Generic3x3
+            | Self::Lectern
             | Self::Hopper
             | Self::Brewing
             | Self::Beacon
@@ -155,6 +177,41 @@ impl ContainerKind {
             },
             Self::Generic3x3 => Menu::Generic3x3 {
                 contents: SlotList::default(),
+                player: SlotList::default(),
+            },
+            Self::Grindstone => Menu::Grindstone {
+                input: ItemStack::Empty,
+                additional: ItemStack::Empty,
+                result: ItemStack::Empty,
+                player: SlotList::default(),
+            },
+            Self::Lectern => Menu::Lectern {
+                book: ItemStack::Empty,
+                player: SlotList::default(),
+            },
+            Self::Loom => Menu::Loom {
+                banner: ItemStack::Empty,
+                dye: ItemStack::Empty,
+                pattern: ItemStack::Empty,
+                result: ItemStack::Empty,
+                player: SlotList::default(),
+            },
+            Self::Smithing => Menu::Smithing {
+                template: ItemStack::Empty,
+                base: ItemStack::Empty,
+                additional: ItemStack::Empty,
+                result: ItemStack::Empty,
+                player: SlotList::default(),
+            },
+            Self::Cartography => Menu::CartographyTable {
+                map: ItemStack::Empty,
+                additional: ItemStack::Empty,
+                result: ItemStack::Empty,
+                player: SlotList::default(),
+            },
+            Self::Stonecutter => Menu::Stonecutter {
+                input: ItemStack::Empty,
+                result: ItemStack::Empty,
                 player: SlotList::default(),
             },
             Self::Hopper => Menu::Hopper {

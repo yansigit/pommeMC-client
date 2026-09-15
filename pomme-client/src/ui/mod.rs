@@ -23,6 +23,7 @@ pub mod merchant;
 pub mod pause;
 pub mod player_tab;
 pub mod server_list;
+pub mod specialized;
 pub mod spectator_menu;
 pub mod subtitles;
 pub mod text;

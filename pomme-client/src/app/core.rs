@@ -1048,6 +1048,24 @@ impl AppCore {
                         MenuKind::Generic3x3 | MenuKind::Crafter3x3 => {
                             Some(ContainerScreen::Generic3x3)
                         }
+                        MenuKind::Grindstone => Some(ContainerScreen::Specialized(
+                            crate::ui::specialized::SpecializedContainer::Grindstone,
+                        )),
+                        MenuKind::Lectern => Some(ContainerScreen::Specialized(
+                            crate::ui::specialized::SpecializedContainer::Lectern,
+                        )),
+                        MenuKind::Loom => Some(ContainerScreen::Specialized(
+                            crate::ui::specialized::SpecializedContainer::Loom,
+                        )),
+                        MenuKind::Smithing => Some(ContainerScreen::Specialized(
+                            crate::ui::specialized::SpecializedContainer::Smithing,
+                        )),
+                        MenuKind::CartographyTable => Some(ContainerScreen::Specialized(
+                            crate::ui::specialized::SpecializedContainer::Cartography,
+                        )),
+                        MenuKind::Stonecutter => Some(ContainerScreen::Specialized(
+                            crate::ui::specialized::SpecializedContainer::Stonecutter,
+                        )),
                         MenuKind::Hopper => Some(ContainerScreen::Hopper),
                         MenuKind::BrewingStand => Some(ContainerScreen::Brewing),
                         MenuKind::Beacon => Some(ContainerScreen::Beacon),
@@ -1055,7 +1073,6 @@ impl AppCore {
                         MenuKind::ShulkerBox => Some(ContainerScreen::ShulkerBox),
                         MenuKind::Anvil => Some(ContainerScreen::Anvil),
                         MenuKind::Enchantment => Some(ContainerScreen::Enchantment),
-                        _ => None,
                     };
                     if let Some(screen) = screen {
                         // Vanilla setScreen replaces whatever screen is up,
