@@ -23,8 +23,74 @@ use super::sender::{Outbound, PacketSender};
 pub(crate) const SECURE_CHAT_NOTICE: &str =
     "Chat disabled: this server requires signed chat, which this client does not support yet.";
 
-pub(crate) fn unsigned_chat_allowed(secure_chat_required: bool, message: &str) -> bool {
-    !secure_chat_required || message.starts_with('/')
+struct ChatSigningState {
+    account_uuid: uuid::Uuid,
+    session_id: uuid::Uuid,
+    certificates: azalea_auth::certs::Certificates,
+    salt: u64,
+    message_index: u32,
+}
+
+impl ChatSigningState {
+    fn from_certificates(
+        account_uuid: uuid::Uuid,
+        certificates: azalea_auth::certs::Certificates,
+    ) -> Self {
+        Self {
+            account_uuid,
+            session_id: uuid::Uuid::new_v4(),
+            certificates,
+            salt: azalea_crypto::signing::make_salt(),
+            message_index: 0,
+        }
+    }
+
+    fn session_update(&self) -> ServerboundGamePacket {
+        ServerboundGamePacket::ChatSessionUpdate(
+            azalea_protocol::packets::game::s_chat_session_update::ServerboundChatSessionUpdate {
+                chat_session:
+                    azalea_protocol::packets::game::s_chat_session_update::RemoteChatSessionData {
+                        session_id: self.session_id,
+                        profile_public_key:
+                            azalea_protocol::packets::game::s_chat_session_update::ProfilePublicKeyData {
+                                expires_at: self.certificates.expires_at.timestamp_millis().max(0)
+                                    as u64,
+                                key: self.certificates.public_key_der.clone(),
+                                key_signature: self.certificates.signature_v2.clone(),
+                            },
+                    },
+            },
+        )
+    }
+
+    fn sign_message(
+        &mut self,
+        message: String,
+        timestamp: std::time::SystemTime,
+    ) -> ServerboundGamePacket {
+        let signature = azalea_crypto::signing::sign_chat_message(
+            &azalea_crypto::signing::SignChatMessageOptions {
+                account_uuid: self.account_uuid,
+                chat_session_uuid: self.session_id,
+                message_index: self.message_index,
+                salt: self.salt,
+                timestamp,
+                message: message.clone(),
+                private_key: self.certificates.private_key.clone(),
+            },
+        );
+        self.message_index = self.message_index.saturating_add(1);
+        ServerboundGamePacket::Chat(azalea_protocol::packets::game::s_chat::ServerboundChat {
+            message,
+            timestamp: timestamp
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+            salt: self.salt,
+            signature: Some(signature),
+            last_seen_messages: Default::default(),
+        })
+    }
 }
 
 #[derive(Error, Debug)]
@@ -138,16 +204,6 @@ pub struct ConnectionHandle {
     pub chat_tx: crossbeam_channel::Sender<String>,
     pub packet_tx: PacketSender,
     pub task: tokio::task::JoinHandle<()>,
-    secure_chat_required: Arc<AtomicBool>,
-}
-
-impl ConnectionHandle {
-    /// Whether the joined server requires signed chat messages. The flag is
-    /// populated from the authoritative game login packet, so callers never
-    /// infer policy from the selected client version.
-    pub fn secure_chat_required(&self) -> bool {
-        self.secure_chat_required.load(Ordering::Acquire)
-    }
 }
 
 impl Drop for ConnectionHandle {
@@ -189,7 +245,6 @@ pub fn spawn_connection(rt: &tokio::runtime::Runtime, args: ConnectArgs) -> Conn
         chat_tx,
         packet_tx,
         task,
-        secure_chat_required,
     }
 }
 
@@ -251,6 +306,27 @@ pub async fn connect_to_server(
 
     login_sequence(&mut conn, &uuid, access_token.as_deref()).await?;
 
+    let chat_signing = if super::translate::active().is_none() {
+        if let Some(access_token) = access_token.as_deref() {
+            match azalea_auth::certs::fetch_certificates(access_token).await {
+                Ok(certificates) => {
+                    tracing::info!("Fetched Mojang chat-signing certificates");
+                    Some(Arc::new(parking_lot::Mutex::new(
+                        ChatSigningState::from_certificates(uuid, certificates),
+                    )))
+                }
+                Err(error) => {
+                    tracing::warn!("Could not fetch chat-signing certificates: {error}");
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // 1.20.1 and older have no configuration phase: the server enters play as
     // soon as it has sent the profile, and the registries ride in the game
     // login packet rather than in registry_data packets.
@@ -293,6 +369,7 @@ pub async fn connect_to_server(
         joined,
         view_distance,
         secure_chat_required,
+        chat_signing,
     )
     .await
 }
@@ -797,6 +874,7 @@ async fn game_loop(
     joined: Joined,
     view_distance: u8,
     secure_chat_required: Arc<AtomicBool>,
+    chat_signing: Option<Arc<parking_lot::Mutex<ChatSigningState>>>,
 ) -> Result<(), ConnectionError> {
     let Joined {
         registries: mut registry_holder,
@@ -811,6 +889,7 @@ async fn game_loop(
     let chat_tree = shared_tree.clone();
     let chat_secure_required = Arc::clone(&secure_chat_required);
     let chat_event_tx = event_tx.clone();
+    let chat_signing_state = chat_signing.clone();
     tokio::task::spawn_blocking(move || {
         while let Ok(msg) = chat_rx.recv() {
             let packet = if let Some(command) = msg.strip_prefix('/') {
@@ -840,7 +919,7 @@ async fn game_loop(
                     },
                 )
             } else {
-                if chat_secure_required.load(Ordering::Acquire) {
+                if chat_secure_required.load(Ordering::Acquire) && chat_signing_state.is_none() {
                     let _ = chat_event_tx.try_send(NetworkEvent::ChatMessage {
                         spans: vec![crate::ui::text::TextSpan::new(
                             SECURE_CHAT_NOTICE.into(),
@@ -849,18 +928,24 @@ async fn game_loop(
                     });
                     continue;
                 }
-                ServerboundGamePacket::Chat(
-                    azalea_protocol::packets::game::s_chat::ServerboundChat {
-                        message: msg,
-                        timestamp: std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_millis() as u64,
-                        salt: 0,
-                        signature: None,
-                        last_seen_messages: Default::default(),
-                    },
-                )
+                let timestamp = std::time::SystemTime::now();
+                if let Some(state) = &chat_signing_state {
+                    let mut state = state.lock();
+                    state.sign_message(msg, timestamp)
+                } else {
+                    ServerboundGamePacket::Chat(
+                        azalea_protocol::packets::game::s_chat::ServerboundChat {
+                            message: msg,
+                            timestamp: timestamp
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64,
+                            salt: 0,
+                            signature: None,
+                            last_seen_messages: Default::default(),
+                        },
+                    )
+                }
             };
             if chat_outbound_tx
                 .send(Outbound::Packet(Box::new(packet)))
@@ -995,6 +1080,13 @@ async fn game_loop(
                             "Server requires secure chat; unsigned chat and signable commands will be blocked"
                         );
                     }
+                    if let Some(state) = &chat_signing {
+                        let session_update = state.lock().session_update();
+                        let frame = serialize_frame(&session_update)?;
+                        writer_tx.send(WriterRequest::Frame(frame)).map_err(|_| {
+                            ConnectionError::Write(std::io::Error::other("writer task stopped"))
+                        })?;
+                    }
                 }
                 handle_game_packet(&packet, &sender, event_tx, &registry_holder, &shared_tree)
             }
@@ -1115,14 +1207,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn secure_chat_policy_blocks_only_unsigned_chat() {
-        assert!(unsigned_chat_allowed(false, "hello"));
-        assert!(unsigned_chat_allowed(false, "/list"));
-        assert!(!unsigned_chat_allowed(true, "hello"));
-        assert!(unsigned_chat_allowed(true, "/list"));
     }
 
     /// The whole join over an in-memory pipe, against a peer that sends only

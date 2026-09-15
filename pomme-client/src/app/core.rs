@@ -502,12 +502,10 @@ impl AppCore {
     }
 
     pub fn send_chat_message(&self, connection: &ConnectionHandle, msg: String) -> bool {
-        // Commands without signable arguments remain valid unsigned protocol
-        // messages. Ordinary chat cannot be sent safely until chat-session
-        // certificates and signatures are implemented.
-        if !crate::net::connection::unsigned_chat_allowed(connection.secure_chat_required(), &msg) {
-            return false;
-        }
+        // Secure-chat policy and signing are enforced at the network boundary,
+        // where the authenticated chat session and server login policy are
+        // available. This lets authenticated sessions sign ordinary chat while
+        // still rejecting unsupported messages when certificates are absent.
         connection.chat_tx.try_send(msg).is_ok()
     }
 
