@@ -1041,11 +1041,13 @@ impl AppCore {
                         MenuKind::Generic9x4 => Some(ContainerScreen::Chest { rows: 4 }),
                         MenuKind::Generic9x5 => Some(ContainerScreen::Chest { rows: 5 }),
                         MenuKind::Generic9x6 => Some(ContainerScreen::Chest { rows: 6 }),
-                        // Dropper and dispenser use the same nine-slot layout
-                        // as the modern generic_3x3 menu. Their behavior is
-                        // server-authoritative, so the generic slot screen is
-                        // sufficient for all inventory operations.
-                        MenuKind::Generic3x3 => Some(ContainerScreen::Chest { rows: 1 }),
+                        // Dropper, dispenser, and crafter share a nine-slot
+                        // inventory layout. Their behavior is server-
+                        // authoritative, so the generic slot screen is
+                        // sufficient for inventory operations.
+                        MenuKind::Generic3x3 | MenuKind::Crafter3x3 => {
+                            Some(ContainerScreen::Generic3x3)
+                        }
                         MenuKind::Hopper => Some(ContainerScreen::Hopper),
                         MenuKind::BrewingStand => Some(ContainerScreen::Brewing),
                         MenuKind::Beacon => Some(ContainerScreen::Beacon),
@@ -1086,8 +1088,8 @@ impl AppCore {
                         game.container_was_open = Some(container_id);
                         self.apply_cursor_grab(window, Some(game));
                     } else {
-                        // TODO: render the remaining menu screens (chest,
-                        // brewing stand, ...). Until then tell the server we
+                        // TODO: render the remaining specialized menu screens.
+                        // Until then tell the server we
                         // closed the menu so its container state stays
                         // consistent.
                         use azalea_protocol::packets::game::s_container_close::ServerboundContainerClose;

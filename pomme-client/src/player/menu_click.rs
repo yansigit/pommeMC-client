@@ -15,6 +15,7 @@ use azalea_registry::builtin::ItemKind;
 /// Which container menu a click applies to. `Furnace` covers the furnace,
 /// blast furnace, and smoker menus, which share the same slot structure;
 /// `Chest` covers every generic 9xN menu (chests, ender chests, barrels, ...).
+/// `Generic3x3` covers dispenser, dropper, and crafter-style nine-slot menus.
 /// `Hopper` covers the five-slot hopper menu. Brewing and beacon menus use the
 /// same server-authoritative click path with their vanilla slot layouts.
 /// Merchant covers the two payment slots, result slot, and player inventory.
@@ -24,6 +25,7 @@ pub enum ContainerKind {
     CraftingTable,
     Furnace,
     Chest { rows: u8 },
+    Generic3x3,
     Hopper,
     Brewing,
     Beacon,
@@ -39,6 +41,7 @@ impl ContainerKind {
             Self::Player | Self::CraftingTable => 46,
             Self::Furnace | Self::Anvil => 39,
             Self::Chest { rows } => rows as usize * 9 + 36,
+            Self::Generic3x3 => 45,
             Self::Hopper => 41,
             Self::Brewing => 41,
             Self::Beacon => 37,
@@ -55,6 +58,7 @@ impl ContainerKind {
             Self::Player | Self::CraftingTable => 10,
             Self::Furnace | Self::Anvil => 3,
             Self::Chest { rows } => rows as usize * 9,
+            Self::Generic3x3 => 9,
             Self::Hopper => 5,
             Self::Brewing => 5,
             Self::Beacon => 1,
@@ -76,6 +80,7 @@ impl ContainerKind {
             Self::Anvil => Some(2),
             Self::Furnace
             | Self::Chest { .. }
+            | Self::Generic3x3
             | Self::Hopper
             | Self::Brewing
             | Self::Beacon
@@ -145,6 +150,10 @@ impl ContainerKind {
                 player: SlotList::default(),
             },
             Self::Chest { .. } => Menu::Generic9x6 {
+                contents: SlotList::default(),
+                player: SlotList::default(),
+            },
+            Self::Generic3x3 => Menu::Generic3x3 {
                 contents: SlotList::default(),
                 player: SlotList::default(),
             },
@@ -519,7 +528,10 @@ fn quick_move(kind: ContainerKind, menu: &mut Menu, s: usize) {
             break;
         }
         match kind {
-            ContainerKind::Chest { .. } | ContainerKind::Hopper | ContainerKind::ShulkerBox => {
+            ContainerKind::Chest { .. }
+            | ContainerKind::Generic3x3
+            | ContainerKind::Hopper
+            | ContainerKind::ShulkerBox => {
                 let split = kind.inv_start();
                 if s < split {
                     move_item_stack_to(kind, menu, s, split..menu.len(), true);
@@ -602,6 +614,14 @@ mod tests {
         assert_eq!(ContainerKind::Hopper.inv_start(), 5);
         assert_eq!(ContainerKind::Hopper.hotbar_menu_slot(0), 32);
         assert_eq!(ContainerKind::Hopper.hotbar_menu_slot(8), 40);
+    }
+
+    #[test]
+    fn generic_three_by_three_uses_nine_slots_before_player_inventory() {
+        assert_eq!(ContainerKind::Generic3x3.slot_count(), 45);
+        assert_eq!(ContainerKind::Generic3x3.inv_start(), 9);
+        assert_eq!(ContainerKind::Generic3x3.hotbar_menu_slot(0), 36);
+        assert_eq!(ContainerKind::Generic3x3.hotbar_menu_slot(8), 44);
     }
 
     #[test]

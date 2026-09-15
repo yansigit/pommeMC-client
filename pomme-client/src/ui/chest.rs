@@ -182,6 +182,78 @@ pub fn build_hopper(
     }
 }
 
+/// The nine-slot dispenser/dropper/crafter screen. These menus share the
+/// generic_3x3 slot contract, while the server remains authoritative for
+/// dispensing and crafter redstone behavior.
+#[allow(clippy::too_many_arguments)]
+pub fn build_grid_3x3(
+    elements: &mut Vec<MenuElement>,
+    screen_w: f32,
+    screen_h: f32,
+    cursor: (f32, f32),
+    input: &ContainerInput,
+    slots: &[ItemStack],
+    title: &str,
+    cursor_item: &ItemStack,
+    drag: &mut Option<DragState>,
+    last_click: &mut Option<(u16, Instant)>,
+    gs: f32,
+) -> ContainerResult {
+    let panel = push_panel(
+        elements,
+        screen_w,
+        screen_h,
+        gs,
+        166.0,
+        SpriteId::Generic54Bottom,
+    );
+    panel.label(elements, 8.0, 6.0, title);
+    panel.label(elements, 8.0, 70.0, "Inventory");
+
+    let mut ctx = SlotCtx::new(
+        elements,
+        &panel,
+        cursor,
+        ContainerKind::Generic3x3,
+        slots,
+        cursor_item,
+        drag,
+    );
+    for row in 0..3u16 {
+        for col in 0..3u16 {
+            let slot = row * 3 + col;
+            let item = slots.get(slot as usize).unwrap_or(&ItemStack::Empty);
+            ctx.slot(
+                62.0 + col as f32 * SLOT_STRIDE,
+                18.0 + row as f32 * SLOT_STRIDE,
+                item,
+                None,
+                slot,
+            );
+        }
+    }
+    ctx.player_rows(slots, 9, 36, 84.0);
+    let (hovered, shown_cursor) = ctx.finish(cursor_item);
+    push_cursor_stack(elements, cursor, panel.scale, &shown_cursor);
+    let (ops, clicked_outside) = resolve_gesture(
+        input,
+        hovered,
+        &panel,
+        cursor,
+        ContainerKind::Generic3x3,
+        slots,
+        cursor_item,
+        drag,
+        last_click,
+    );
+    ContainerResult {
+        clicked_outside,
+        ops,
+        button: None,
+        beacon: None,
+    }
+}
+
 /// The contents grid at GUI-unit y 18, the player rows at `main_y`, and the
 /// shared gesture tail.
 #[allow(clippy::too_many_arguments)]
