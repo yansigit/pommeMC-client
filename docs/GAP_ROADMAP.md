@@ -56,7 +56,7 @@ audits. Current code already includes:
 These should not be reimplemented. Their remaining gap is live-server validation,
 edge-case coverage, and parity across every published protocol family.
 
-Local inspection found 127 explicit first-party TODO/FIXME-style markers, 125 of
+Local inspection found 126 explicit first-party TODO/FIXME-style markers, 125 of
 them in `pomme-client`. They are concentrated in:
 
 | Area | Main files |
@@ -653,10 +653,36 @@ Intel Homebrew loader paths. Re-running the same public command then passed.
 The official release Clippy command also exposed two pre-existing test-module
 ordering failures. Moving those tests behind their production items preserved
 all behavior, after which formatting, release Clippy with warnings denied, and
-the complete 362-test client invocation all passed.
+the complete client invocation finished with 361 passed tests and the documented
+integrated acceptance test ignored. That ignored test passed when invoked
+separately.
 
 The full remote-server matrix remains unverified because the repository does not
 yet provide the pinned vanilla-compatible fixtures, online-mode credentials, or
 acceptance runner required to execute it reproducibly. Closing that observable
 constraint is Wave 0 and is why the roadmap does not promote any remote protocol
 family beyond its evidence in `docs/SUPPORT_MATRIX.md`.
+
+### Whole-result requirement traceability
+
+After all roadmap, build, and quality-gate changes were present together, the
+complete result was checked again:
+
+| Requirement or changed output | Whole-result check | Observed result |
+| --- | --- | --- |
+| Bound "all gaps" to repository evidence | Re-ran the Git-native marker census at the original revision and final `HEAD` | Both revisions contain 126 first-party Rust markers, 125 in `pomme-client`; the roadmap's classification did not lose or invent a source marker |
+| Do not re-plan existing behavior | Ran the full client tests and integrated gameplay path | 361 default client tests passed, one acceptance test was intentionally ignored, and that acceptance passed separately through the real client-to-SteelMC connection |
+| Research implementations across repositories with `gh` | Resolved every pinned full SHA and repository license through the GitHub REST API | All 11 revisions and SPDX identifiers matched the research table |
+| Cover client gaps | Checked the roadmap's protocol, state, physics, movement, interaction, inventory, rendering, fluid, entity, UI, camera, input, and accessibility sections | Every mapped client domain is present with deliverables, references, and an exit gate |
+| Cover integrated-server gaps separately | Checked the spawning, mob tiers, survival substrate, bosses, and progression sections, then ran integrated gameplay | The tracks remain independently gated; SteelMC launched, generated a world, admitted the client, rendered gameplay, and saved cleanly |
+| Provide actionable ordering | Checked Waves 0 through 8 and each epic's gate | The document orders evidence first, client validation next, shared foundations before presentation, and bosses last |
+| Preserve license boundaries | Rechecked remote SPDX data plus local Pomme and SteelMC license declarations | Client references remain GPL-compatible and SteelMC's AGPL boundary is called out separately |
+| Link the roadmap from the public support claims | Resolved every local Markdown target and followed the support-matrix link | `docs/SUPPORT_MATRIX.md` resolves to this roadmap and all changed local links exist |
+| Keep the macOS public client command buildable | Built a release arm64 executable and inspected its dynamic libraries | The binary links Homebrew's `libvulkan.1.dylib`; both debug and packaged-release title captures initialized Vulkan on Apple M3 Pro |
+| Preserve menu and beacon behavior while fixing the quality gate | Ran every command in `client-pre-pr` manually because `just` is unavailable in the environment | Formatting, release Clippy with warnings denied, 40 protocol tests, 361 default client tests, and the singleplayer lifecycle test all passed |
+| Exercise packaging and end-user paths | Built `target/release/pomme-client`, then ran it with the launch-token guard through title and integrated gameplay captures | The packaged title path wrote a valid 1,017,149-byte PNG; packaged gameplay completed login/configuration/world rendering, wrote a valid 1,066,896-byte PNG, saved 1,351 chunks, and shut down cleanly |
+| Report rather than hide unavailable validation | Attempted only reproducible checked-in paths and inspected the acceptance prerequisites | Remote online-mode and multi-version server validation remains blocked by missing pinned fixtures, credentials, and runner, and is explicitly assigned to Wave 0 |
+
+The release build reports a future-incompatibility warning from `winit 0.30.13`.
+It does not fail the current build or Clippy gate, but dependency migration is a
+concrete maintenance risk for the performance/platform cleanup wave.
