@@ -23,6 +23,13 @@ asserts:
 - a server disconnect during the flow fails the test with its reason;
 - the generated world is saved and cleaned up.
 
+The client-side gameplay gate also has focused coverage for the standard menu
+contracts and server-authoritative operations: generic 3x3 menus (dispenser,
+dropper, and crafter), grindstone, lectern, loom, smithing, cartography, and
+stonecutter slot layouts, plus creative-mode item dropping. These checks prove
+wire/menu routing and compilation, but they do not replace click-through tests
+against a live vanilla server.
+
 ## Required server-backed scenarios
 
 The following scenarios remain required for a validated release tier:
