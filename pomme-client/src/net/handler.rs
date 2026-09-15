@@ -248,6 +248,7 @@ pub fn handle_game_packet(
                 effect: crate::mob_effect::MobEffectInstance {
                     effect_id: p.mob_effect.to_u32(),
                     duration: p.data.duration,
+                    amplifier: p.data.amplifier.clamp(0, u8::MAX as i32) as u8,
                     ambient: p.data.flags.ambient,
                     show_icon: p.data.flags.show_icon,
                 },

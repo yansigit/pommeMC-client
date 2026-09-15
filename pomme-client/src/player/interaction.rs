@@ -25,6 +25,7 @@ use crate::app::input::{self, InputState};
 use crate::audio::{AudioEngine, CATEGORY_BLOCKS, CATEGORY_PLAYERS, SoundRef};
 use crate::entity::EntityStore;
 use crate::entity::components::{LookDirection, Position};
+use crate::mob_effect::ActiveMobEffects;
 use crate::net::sender::PacketSender;
 use crate::particle::ParticleStore;
 use crate::physics::aabb::{self, Aabb, Axis, Face};
@@ -49,6 +50,8 @@ const SWING_DURATION: i32 = 6;
 const CONSUME_EFFECTS_START_FRACTION: f32 = 0.21875;
 const CONSUME_EFFECTS_INTERVAL: i32 = 4;
 const MAX_FOOD_LEVEL: u32 = 20;
+const HASTE_EFFECT_ID: u32 = 2;
+const MINING_FATIGUE_EFFECT_ID: u32 = 3;
 
 /// Handles the predicted-break effects need (vanilla level event 2001 spawns
 /// break particles alongside the sound).
@@ -353,6 +356,7 @@ impl InteractionState {
         look: LookDirection,
         on_ground: bool,
         creative: bool,
+        mob_effects: &ActiveMobEffects,
         food: u32,
         selected_slot: u8,
         held_stack: Option<&ItemStackData>,
@@ -393,6 +397,7 @@ impl InteractionState {
                 player_pos,
                 on_ground,
                 creative,
+                mob_effects,
                 held_stack,
                 effects,
                 &mut dirty_chunks,
@@ -452,6 +457,7 @@ impl InteractionState {
                     player_pos,
                     on_ground,
                     creative,
+                    mob_effects,
                     held_stack,
                     effects,
                     &mut dirty_chunks,
@@ -545,6 +551,7 @@ impl InteractionState {
         player_pos: DVec3,
         on_ground: bool,
         creative: bool,
+        mob_effects: &ActiveMobEffects,
         held_stack: Option<&ItemStackData>,
         effects: &mut BreakEffects,
         dirty_chunks: &mut Vec<BlockPos>,
@@ -593,6 +600,7 @@ impl InteractionState {
             player_pos,
             on_ground,
             creative,
+            mob_effects,
             held_stack,
             effects,
             dirty_chunks,
@@ -609,6 +617,7 @@ impl InteractionState {
         player_pos: DVec3,
         on_ground: bool,
         creative: bool,
+        mob_effects: &ActiveMobEffects,
         held_stack: Option<&ItemStackData>,
         effects: &mut BreakEffects,
         dirty_chunks: &mut Vec<BlockPos>,
@@ -638,6 +647,7 @@ impl InteractionState {
             player_pos,
             on_ground,
             creative,
+            mob_effects,
             held_stack,
             effects,
             dirty_chunks,
@@ -1014,6 +1024,7 @@ impl InteractionState {
         player_pos: DVec3,
         on_ground: bool,
         creative: bool,
+        mob_effects: &ActiveMobEffects,
         held_stack: Option<&ItemStackData>,
         effects: &mut BreakEffects,
         dirty_chunks: &mut Vec<BlockPos>,
@@ -1024,7 +1035,7 @@ impl InteractionState {
             return;
         }
 
-        let progress = destroy_progress(state, on_ground, creative, held_stack);
+        let progress = destroy_progress(state, on_ground, creative, mob_effects, held_stack);
 
         if progress >= 1.0 {
             if self.is_destroying {
@@ -1099,6 +1110,7 @@ impl InteractionState {
         player_pos: DVec3,
         on_ground: bool,
         creative: bool,
+        mob_effects: &ActiveMobEffects,
         held_stack: Option<&ItemStackData>,
         effects: &mut BreakEffects,
         dirty_chunks: &mut Vec<BlockPos>,
@@ -1117,6 +1129,7 @@ impl InteractionState {
                 player_pos,
                 on_ground,
                 creative,
+                mob_effects,
                 held_stack,
                 effects,
                 dirty_chunks,
@@ -1130,7 +1143,8 @@ impl InteractionState {
             return;
         }
 
-        self.destroy_progress += destroy_progress(state, on_ground, creative, held_stack);
+        self.destroy_progress +=
+            destroy_progress(state, on_ground, creative, mob_effects, held_stack);
         if self.destroy_ticks % 4.0 == 0.0 {
             play_hit_sound(audio, state, hit.block_pos);
         }
@@ -1208,7 +1222,6 @@ impl InteractionState {
 /// `AttributeInstance.calculateValue`. Computed locally like vanilla's client;
 /// the server's `UpdateAttributes` snapshot is deliberately not used (it
 /// already bakes in the held item's modifier and lags item switches).
-/// TODO: haste / mining fatigue modifiers once mob effects are tracked.
 pub fn attack_speed(held: Option<&ItemStackData>) -> f64 {
     let base = 4.0f64;
     let mut add = 0.0f64;
@@ -1286,6 +1299,7 @@ fn destroy_progress(
     state: BlockState,
     on_ground: bool,
     creative: bool,
+    mob_effects: &ActiveMobEffects,
     held_stack: Option<&ItemStackData>,
 ) -> f32 {
     if creative {
@@ -1306,9 +1320,7 @@ fn destroy_progress(
     let kind = state.as_block_kind();
 
     let mut speed = tool.map_or(1.0, |t| tool_mining_speed(t, kind));
-    // TODO: the `getDestroySpeed` modifier chain (mining efficiency, haste /
-    // mining fatigue, block break speed, submerged mining speed) needs
-    // attribute and mob-effect tracking.
+    speed *= mining_effect_multiplier(mob_effects);
     if !on_ground {
         speed /= 5.0;
     }
@@ -1317,6 +1329,24 @@ fn destroy_progress(
         || tool.is_some_and(|t| tool_correct_for_drops(t, kind));
     let divisor = if correct_tool { 30.0 } else { 100.0 };
     speed / hardness / divisor
+}
+
+/// Vanilla Haste and Mining Fatigue multipliers from
+/// `Player.getDestroySpeed`. Other modern modifiers remain separate until
+/// their packet-backed state is retained locally.
+fn mining_effect_multiplier(effects: &ActiveMobEffects) -> f32 {
+    if let Some(amplifier) = effects.amplifier(HASTE_EFFECT_ID) {
+        return 1.0 + 0.2 * (amplifier as f32 + 1.0);
+    }
+    if let Some(amplifier) = effects.amplifier(MINING_FATIGUE_EFFECT_ID) {
+        return match amplifier {
+            0 => 0.3,
+            1 => 0.09,
+            2 => 0.0027,
+            _ => 0.00081,
+        };
+    }
+    1.0
 }
 
 /// Vanilla `Tool.getMiningSpeed`: first rule with a speed that covers the
@@ -1678,6 +1708,7 @@ mod tests {
     use azalea_registry::identifier::Identifier;
 
     use super::*;
+    use crate::mob_effect::MobEffectInstance;
 
     #[test]
     fn respawn_resets_player_owned_interaction_transients() {
@@ -1911,5 +1942,30 @@ mod tests {
         assert!(tool_correct_for_drops(&tool, BlockKind::Stone));
         assert_eq!(tool_mining_speed(&tool, BlockKind::Dirt), 1.0);
         assert!(!tool_correct_for_drops(&tool, BlockKind::Dirt));
+    }
+
+    #[test]
+    fn mining_effect_multiplier_matches_vanilla_levels() {
+        let mut effects = ActiveMobEffects::default();
+        assert_eq!(mining_effect_multiplier(&effects), 1.0);
+
+        effects.update(MobEffectInstance {
+            effect_id: HASTE_EFFECT_ID,
+            duration: 200,
+            amplifier: 1,
+            ambient: false,
+            show_icon: true,
+        });
+        assert!((mining_effect_multiplier(&effects) - 1.4).abs() < f32::EPSILON);
+
+        effects.remove(HASTE_EFFECT_ID);
+        effects.update(MobEffectInstance {
+            effect_id: MINING_FATIGUE_EFFECT_ID,
+            duration: 200,
+            amplifier: 2,
+            ambient: false,
+            show_icon: true,
+        });
+        assert!((mining_effect_multiplier(&effects) - 0.0027).abs() < f32::EPSILON);
     }
 }

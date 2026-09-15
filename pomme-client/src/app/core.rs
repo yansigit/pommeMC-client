@@ -2122,6 +2122,7 @@ impl AppCore {
             game.player.look_dir,
             game.player.on_ground,
             crate::player::is_creative(game.player.game_mode),
+            &game.player.effects,
             game.player.food,
             input.selected_slot(),
             held_stack,

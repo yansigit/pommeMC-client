@@ -70,13 +70,13 @@ pub fn info(effect_id: u32) -> Option<&'static MobEffectInfo> {
 /// Vanilla `MobEffectInstance.INFINITE_DURATION`.
 pub const INFINITE_DURATION: i32 = -1;
 
-// TODO: amplifier and show_particles once the inventory effect panel and
-// effect particles are ported.
 #[derive(Clone)]
 pub struct MobEffectInstance {
     pub effect_id: u32,
     /// Remaining ticks; `-1` = infinite.
     pub duration: i32,
+    /// Zero-based vanilla effect level.
+    pub amplifier: u8,
     pub ambient: bool,
     pub show_icon: bool,
 }
@@ -135,6 +135,14 @@ impl ActiveMobEffects {
         self.0.is_empty()
     }
 
+    /// Returns the zero-based amplifier for an active effect.
+    pub fn amplifier(&self, effect_id: u32) -> Option<u8> {
+        self.0
+            .iter()
+            .find(|effect| effect.effect_id == effect_id)
+            .map(|effect| effect.amplifier)
+    }
+
     /// Vanilla `tickClient`: durations floor at 0 and the entry stays until
     /// the server's remove packet.
     pub fn tick(&mut self) {
@@ -161,6 +169,7 @@ mod tests {
         MobEffectInstance {
             effect_id,
             duration,
+            amplifier: 0,
             ambient,
             show_icon: true,
         }
@@ -247,5 +256,28 @@ mod tests {
         assert_eq!(sorted.len(), 1);
         assert_eq!(sorted[0].duration, 300);
         assert!(sorted[0].ambient);
+    }
+
+    #[test]
+    fn update_replaces_and_exposes_amplifier() {
+        let mut effects = ActiveMobEffects::default();
+        effects.update(MobEffectInstance {
+            effect_id: 2,
+            duration: 100,
+            amplifier: 2,
+            ambient: false,
+            show_icon: true,
+        });
+        assert_eq!(effects.amplifier(2), Some(2));
+        effects.update(MobEffectInstance {
+            effect_id: 2,
+            duration: 50,
+            amplifier: 4,
+            ambient: true,
+            show_icon: true,
+        });
+        assert_eq!(effects.amplifier(2), Some(4));
+        effects.remove(2);
+        assert_eq!(effects.amplifier(2), None);
     }
 }

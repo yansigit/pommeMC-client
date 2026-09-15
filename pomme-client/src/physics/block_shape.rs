@@ -2,14 +2,6 @@
 //! isn't a full cube. Ported from the vanilla block classes (`SlabBlock`,
 //! `StairBlock`, etc.). Boxes are block-local (0..1); the caller offsets them
 //! to the block position.
-//!
-//! TODO: walls, fences, fence gates, panes, trapdoors, doors, beds, chests,
-//! cake, etc. still fall back to a full cube.
-//!
-//! TODO: blocks with no collision but a small outline (torches, flowers,
-//! buttons, plants, redstone dust) fall back to a full cube too, so the
-//! crosshair still reaches them from a block away.
-
 use azalea_block::BlockState;
 
 use crate::world::block::PropMap;
@@ -52,9 +44,101 @@ pub(crate) fn compute_shape(id: &str, props: &PropMap) -> Option<Vec<LocalBox>> 
         ));
     }
 
+    if id.ends_with("_trapdoor") {
+        return Some(trapdoor_box(
+            props.get("half").unwrap_or("bottom"),
+            props.get("facing").unwrap_or("north"),
+            props.get("open") == Some("true"),
+        ));
+    }
+
+    if id.ends_with("_door") {
+        return Some(door_box(
+            props.get("half").unwrap_or("lower"),
+            props.get("facing").unwrap_or("north"),
+            props.get("hinge").unwrap_or("left"),
+            props.get("open") == Some("true"),
+        ));
+    }
+
+    if id.ends_with("_fence_gate") {
+        return Some(fence_gate_boxes(
+            props.get("facing").unwrap_or("north"),
+            props.get("open") == Some("true"),
+            props.get("in_wall") == Some("true"),
+        ));
+    }
+
+    if id.ends_with("_fence") {
+        return Some(fence_boxes(props));
+    }
+
+    if id.ends_with("_wall") {
+        return Some(wall_boxes(props));
+    }
+
+    if id == "iron_bars" || id.ends_with("_glass_pane") {
+        return Some(pane_boxes(props));
+    }
+
+    if id.ends_with("_bed") {
+        return Some(bed_box(
+            props.get("part").unwrap_or("foot"),
+            props.get("facing").unwrap_or("north"),
+        ));
+    }
+
+    if id == "cake" {
+        let bites = props
+            .get("bites")
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or(0)
+            .min(6);
+        let min_x = 1.0 / 16.0 + bites as f64 * 2.0 / 16.0;
+        return Some(vec![[
+            min_x,
+            0.0,
+            1.0 / 16.0,
+            15.0 / 16.0,
+            7.0 / 16.0,
+            15.0 / 16.0,
+        ]]);
+    }
+
+    if id.ends_with("_button") || id == "stone_button" || id == "polished_blackstone_button" {
+        return Some(button_box(
+            props.get("face").unwrap_or("wall"),
+            props.get("facing").unwrap_or("north"),
+            props.get("powered") == Some("true"),
+        ));
+    }
+
+    if id == "lever" {
+        return Some(lever_box(
+            props.get("face").unwrap_or("wall"),
+            props.get("facing").unwrap_or("north"),
+        ));
+    }
+
     match id {
         "dirt_path" | "farmland" => Some(vec![[0.0, 0.0, 0.0, 1.0, 0.9375, 1.0]]),
         _ if id.ends_with("_carpet") => Some(vec![[0.0, 0.0, 0.0, 1.0, 0.0625, 1.0]]),
+        "cactus" => Some(vec![[
+            1.0 / 16.0,
+            0.0,
+            1.0 / 16.0,
+            15.0 / 16.0,
+            15.0 / 16.0,
+            15.0 / 16.0,
+        ]]),
+        "flower_pot" | "potted_cactus" => Some(vec![[
+            2.0 / 16.0,
+            0.0,
+            2.0 / 16.0,
+            14.0 / 16.0,
+            6.0 / 16.0,
+            14.0 / 16.0,
+        ]]),
         // `SnowLayerBlock.getCollisionShape` is one layer shorter than its
         // outline, so a single layer has no collision at all.
         "snow" => Some(snow_shape(snow_layers(props) - 1)),
@@ -70,8 +154,223 @@ pub(crate) fn compute_outline(id: &str, props: &PropMap) -> Option<Vec<LocalBox>
         // `LiquidBlock.getShape` and `BubbleColumnBlock.getShape` are
         // `Shapes.empty()`: the pick ray clips straight through them.
         "water" | "lava" | "bubble_column" => Some(Vec::new()),
+        "torch" | "soul_torch" | "copper_torch" | "redstone_torch" => Some(vec![[
+            5.0 / 16.0,
+            0.0,
+            5.0 / 16.0,
+            11.0 / 16.0,
+            10.0 / 16.0,
+            11.0 / 16.0,
+        ]]),
+        "flower_pot" | "potted_cactus" => Some(vec![[
+            2.0 / 16.0,
+            0.0,
+            2.0 / 16.0,
+            14.0 / 16.0,
+            6.0 / 16.0,
+            14.0 / 16.0,
+        ]]),
+        _ if is_small_plant(id) => Some(vec![[
+            3.0 / 16.0,
+            0.0,
+            3.0 / 16.0,
+            13.0 / 16.0,
+            1.0,
+            13.0 / 16.0,
+        ]]),
         _ => None,
     }
+}
+
+fn is_small_plant(id: &str) -> bool {
+    matches!(
+        id,
+        "dandelion"
+            | "poppy"
+            | "blue_orchid"
+            | "allium"
+            | "azure_bluet"
+            | "red_tulip"
+            | "orange_tulip"
+            | "white_tulip"
+            | "pink_tulip"
+            | "oxeye_daisy"
+            | "cornflower"
+            | "lily_of_the_valley"
+            | "wither_rose"
+            | "torchflower"
+            | "short_grass"
+            | "fern"
+            | "dead_bush"
+            | "seagrass"
+            | "sweet_berry_bush"
+    )
+}
+
+fn facing_box(facing: &str, thickness: f64, y0: f64, y1: f64) -> LocalBox {
+    match facing {
+        "south" => [0.0, y0, 1.0 - thickness, 1.0, y1, 1.0],
+        "west" => [0.0, y0, 0.0, thickness, y1, 1.0],
+        "east" => [1.0 - thickness, y0, 0.0, 1.0, y1, 1.0],
+        _ => [0.0, y0, 0.0, 1.0, y1, thickness],
+    }
+}
+
+fn trapdoor_box(half: &str, facing: &str, open: bool) -> Vec<LocalBox> {
+    if open {
+        return vec![facing_box(facing, 3.0 / 16.0, 0.0, 1.0)];
+    }
+    let (y0, y1) = if half == "top" {
+        (13.0 / 16.0, 1.0)
+    } else {
+        (0.0, 3.0 / 16.0)
+    };
+    vec![[0.0, y0, 0.0, 1.0, y1, 1.0]]
+}
+
+fn door_box(half: &str, facing: &str, hinge: &str, open: bool) -> Vec<LocalBox> {
+    let thickness = 3.0 / 16.0;
+    let box_ = if !open {
+        facing_box(facing, thickness, 0.0, 1.0)
+    } else {
+        let clockwise = matches!(
+            (facing, hinge),
+            ("north", "left") | ("south", "right") | ("east", "left") | ("west", "right")
+        );
+        let open_facing = if clockwise { cw(facing) } else { ccw(facing) };
+        facing_box(open_facing, thickness, 0.0, 1.0)
+    };
+    let _ = half;
+    vec![box_]
+}
+
+fn fence_boxes(props: &PropMap) -> Vec<LocalBox> {
+    let mut boxes = vec![[6.0 / 16.0, 0.0, 6.0 / 16.0, 10.0 / 16.0, 1.5, 10.0 / 16.0]];
+    for property in ["north", "south", "west", "east"] {
+        if props.get(property) == Some("true") {
+            boxes.push(match property {
+                "north" => [6.0 / 16.0, 6.0 / 16.0, 0.0, 10.0 / 16.0, 1.5, 10.0 / 16.0],
+                "south" => [6.0 / 16.0, 6.0 / 16.0, 6.0 / 16.0, 10.0 / 16.0, 1.5, 1.0],
+                "west" => [0.0, 6.0 / 16.0, 6.0 / 16.0, 10.0 / 16.0, 1.5, 10.0 / 16.0],
+                _ => [6.0 / 16.0, 6.0 / 16.0, 6.0 / 16.0, 1.0, 1.5, 10.0 / 16.0],
+            });
+        }
+    }
+    boxes
+}
+
+fn wall_boxes(props: &PropMap) -> Vec<LocalBox> {
+    let mut boxes = Vec::new();
+    if props.get("up") == Some("true") {
+        boxes.push([7.0 / 16.0, 0.0, 7.0 / 16.0, 9.0 / 16.0, 1.5, 9.0 / 16.0]);
+    }
+    for (property, axis) in [
+        ("north", true),
+        ("south", true),
+        ("west", false),
+        ("east", false),
+    ] {
+        let Some(height) = props.get(property).and_then(wall_height) else {
+            continue;
+        };
+        if axis {
+            let z0 = if property == "north" { 0.0 } else { 7.0 / 16.0 };
+            boxes.push([7.0 / 16.0, 0.0, z0, 9.0 / 16.0, height, z0 + 9.0 / 16.0]);
+        } else {
+            let x0 = if property == "west" { 0.0 } else { 7.0 / 16.0 };
+            boxes.push([x0, 0.0, 7.0 / 16.0, x0 + 9.0 / 16.0, height, 9.0 / 16.0]);
+        }
+    }
+    boxes
+}
+
+fn wall_height(value: &str) -> Option<f64> {
+    match value {
+        "low" => Some(1.0),
+        "tall" => Some(1.5),
+        _ => None,
+    }
+}
+
+fn pane_boxes(props: &PropMap) -> Vec<LocalBox> {
+    let mut boxes = Vec::new();
+    let post = [7.0 / 16.0, 0.0, 7.0 / 16.0, 9.0 / 16.0, 1.0, 9.0 / 16.0];
+    boxes.push(post);
+    for (property, box_) in [
+        ("north", [7.0 / 16.0, 0.0, 0.0, 9.0 / 16.0, 1.0, 9.0 / 16.0]),
+        ("south", [7.0 / 16.0, 0.0, 7.0 / 16.0, 9.0 / 16.0, 1.0, 1.0]),
+        ("west", [0.0, 0.0, 7.0 / 16.0, 9.0 / 16.0, 1.0, 9.0 / 16.0]),
+        ("east", [7.0 / 16.0, 0.0, 7.0 / 16.0, 1.0, 1.0, 9.0 / 16.0]),
+    ] {
+        if props.get(property) == Some("true") {
+            boxes.push(box_);
+        }
+    }
+    boxes
+}
+
+fn fence_gate_boxes(facing: &str, open: bool, in_wall: bool) -> Vec<LocalBox> {
+    if open {
+        return Vec::new();
+    }
+    let height = if in_wall { 1.0 } else { 1.5 };
+    if matches!(facing, "east" | "west") {
+        vec![[6.0 / 16.0, 0.0, 0.0, 10.0 / 16.0, height, 1.0]]
+    } else {
+        vec![[0.0, 0.0, 6.0 / 16.0, 1.0, height, 10.0 / 16.0]]
+    }
+}
+
+fn bed_box(part: &str, facing: &str) -> Vec<LocalBox> {
+    let _ = (part, facing);
+    vec![[0.0, 0.0, 0.0, 1.0, 9.0 / 16.0, 1.0]]
+}
+
+fn button_box(face: &str, facing: &str, powered: bool) -> Vec<LocalBox> {
+    let depth = if powered { 2.0 } else { 3.0 };
+    let thickness = depth / 16.0;
+    match face {
+        "floor" => vec![[
+            5.0 / 16.0,
+            0.0,
+            5.0 / 16.0,
+            11.0 / 16.0,
+            thickness,
+            11.0 / 16.0,
+        ]],
+        "ceiling" => vec![[
+            5.0 / 16.0,
+            1.0 - thickness,
+            5.0 / 16.0,
+            11.0 / 16.0,
+            1.0,
+            11.0 / 16.0,
+        ]],
+        _ => vec![facing_box(facing, thickness, 5.0 / 16.0, 11.0 / 16.0)],
+    }
+}
+
+fn lever_box(face: &str, facing: &str) -> Vec<LocalBox> {
+    let base = match face {
+        "floor" => [
+            5.0 / 16.0,
+            0.0,
+            5.0 / 16.0,
+            11.0 / 16.0,
+            2.0 / 16.0,
+            11.0 / 16.0,
+        ],
+        "ceiling" => [
+            5.0 / 16.0,
+            14.0 / 16.0,
+            5.0 / 16.0,
+            11.0 / 16.0,
+            1.0,
+            11.0 / 16.0,
+        ],
+        _ => facing_box(facing, 2.0 / 16.0, 5.0 / 16.0, 11.0 / 16.0),
+    };
+    vec![base]
 }
 
 fn snow_layers(props: &PropMap) -> i32 {
@@ -165,5 +464,86 @@ fn ccw(facing: &str) -> &'static str {
         "west" => "south",
         "south" => "east",
         _ => "north",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn props(pairs: &[(&'static str, &'static str)]) -> PropMap {
+        PropMap::from_pairs(pairs.to_vec())
+    }
+
+    #[test]
+    fn closed_trapdoor_is_a_three_pixel_slab() {
+        let shape = compute_shape(
+            "oak_trapdoor",
+            &props(&[("half", "bottom"), ("facing", "north"), ("open", "false")]),
+        )
+        .unwrap();
+        assert_eq!(shape, vec![[0.0, 0.0, 0.0, 1.0, 3.0 / 16.0, 1.0]]);
+    }
+
+    #[test]
+    fn open_trapdoor_becomes_a_vertical_panel() {
+        let shape = compute_shape(
+            "oak_trapdoor",
+            &props(&[("half", "bottom"), ("facing", "east"), ("open", "true")]),
+        )
+        .unwrap();
+        assert_eq!(shape, vec![[13.0 / 16.0, 0.0, 0.0, 1.0, 1.0, 1.0]]);
+    }
+
+    #[test]
+    fn door_upper_half_stays_in_its_own_block_cell() {
+        let shape = compute_shape(
+            "oak_door",
+            &props(&[
+                ("half", "upper"),
+                ("facing", "north"),
+                ("hinge", "left"),
+                ("open", "false"),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(shape, vec![[0.0, 0.0, 0.0, 1.0, 1.0, 3.0 / 16.0]]);
+    }
+
+    #[test]
+    fn fence_connection_adds_only_the_requested_arm() {
+        let shape = compute_shape(
+            "oak_fence",
+            &props(&[
+                ("north", "false"),
+                ("south", "false"),
+                ("west", "false"),
+                ("east", "true"),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(shape.len(), 2);
+        assert!(
+            shape
+                .iter()
+                .any(|b| { *b == [6.0 / 16.0, 6.0 / 16.0, 6.0 / 16.0, 1.0, 1.5, 10.0 / 16.0,] })
+        );
+    }
+
+    #[test]
+    fn torch_has_an_outline_but_no_collision_shape() {
+        let props = props(&[]);
+        assert_eq!(compute_shape("torch", &props), None);
+        assert_eq!(
+            compute_outline("torch", &props),
+            Some(vec![[
+                5.0 / 16.0,
+                0.0,
+                5.0 / 16.0,
+                11.0 / 16.0,
+                10.0 / 16.0,
+                11.0 / 16.0,
+            ]])
+        );
     }
 }
