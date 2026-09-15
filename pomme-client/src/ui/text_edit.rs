@@ -643,9 +643,12 @@ mod tests {
     fn ctrl() -> KeyMods {
         KeyMods {
             shift: false,
-            ctrl: true,
+            // `edit_shortcut` uses Cmd on macOS and Ctrl elsewhere. Keep the
+            // helper's intent platform-neutral so these tests exercise the
+            // same public shortcut behavior on every host.
+            ctrl: !cfg!(target_os = "macos"),
             alt: false,
-            super_key: false,
+            super_key: cfg!(target_os = "macos"),
         }
     }
 
@@ -829,9 +832,8 @@ mod tests {
         let mut shift = plain();
         shift.shift = true;
         f.key_pressed(KeyCode::End, &shift, &mut clip, inner, W);
-        let mut ctrl = plain();
-        ctrl.ctrl = true;
-        f.key_pressed(KeyCode::KeyV, &ctrl, &mut clip, inner, W);
+        let shortcut = ctrl();
+        f.key_pressed(KeyCode::KeyV, &shortcut, &mut clip, inner, W);
         assert_eq!(f.value(), pasted);
     }
 }
