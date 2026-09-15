@@ -21,6 +21,13 @@ The remote client can reach a validated release before SteelMC reaches complete
 survival parity. SteelMC mob spawning, hostile mobs, and bosses must therefore
 remain a separate release track instead of blocking the client.
 
+The phrase "all gaps" is necessarily bounded. This roadmap interprets it as all
+gaps evidenced by first-party source markers, support claims, acceptance
+requirements, and the vendored SteelMC implementation as of the research date.
+It does not claim exhaustive parity with every undocumented Minecraft behavior,
+and it treats the request as a researched implementation plan rather than a
+request to implement every epic in one change.
+
 The order below follows four rules:
 
 1. Build acceptance evidence before adding more breadth.
@@ -619,3 +626,37 @@ This ordering turns the current broad alpha into measurable vertical slices. The
 first practical milestone is not "implement every TODO". It is a validated 26.2
 remote-client path, followed by protocol-family promotion, generated physics
 inputs, rendering parity, and a separately gated SteelMC survival track.
+
+## Verification record for this roadmap
+
+The current baseline and ordering were exercised through the project's public
+paths on 2026-09-15, not only inferred from source inspection:
+
+- `cargo test -p pomme-client` passed 361 tests with one ignored acceptance test;
+- `cargo test -p pomme-protocol` passed all 40 protocol tests;
+- `cargo test -p pomme-singleplayer -- --include-ignored` passed the real
+  two-world lifecycle test;
+- the documented ignored integrated-server acceptance test passed, proving the
+  in-memory client connection reached gameplay through SteelMC;
+- the documented title-screen capture initialized audio, Vulkan on an Apple M3
+  Pro, assets, block/item models, and renderer pipelines, then wrote a valid
+  1,017,396-byte PNG;
+- the documented singleplayer gameplay capture launched SteelMC, generated the
+  world and copper-golem fixture, completed login and configuration, entered the
+  game, received dimension/player state, rendered a valid 940,684-byte PNG, and
+  saved 1,127 chunks during clean shutdown.
+
+The first title-screen attempt also found a real macOS integration defect: local
+Homebrew Vulkan loaders were installed but not provided to the linker. The client
+build script now discovers either `VULKAN_SDK/lib`, Apple Silicon Homebrew, or
+Intel Homebrew loader paths. Re-running the same public command then passed.
+The official release Clippy command also exposed two pre-existing test-module
+ordering failures. Moving those tests behind their production items preserved
+all behavior, after which formatting, release Clippy with warnings denied, and
+the complete 362-test client invocation all passed.
+
+The full remote-server matrix remains unverified because the repository does not
+yet provide the pinned vanilla-compatible fixtures, online-mode credentials, or
+acceptance runner required to execute it reproducibly. Closing that observable
+constraint is Wave 0 and is why the roadmap does not promote any remote protocol
+family beyond its evidence in `docs/SUPPORT_MATRIX.md`.
