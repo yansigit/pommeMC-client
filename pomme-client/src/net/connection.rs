@@ -1799,9 +1799,10 @@ mod tests {
             let mut player_login = false;
             let mut dimension = false;
             let mut chunk = false;
+            let mut position = false;
             let mut trace = vec![format!("protocol={}", LATEST.protocol)];
             tokio::time::timeout(Duration::from_secs(60), async {
-                while !(connected && player_login && dimension && chunk) {
+                while !(connected && player_login && dimension && chunk && position) {
                     while let Ok(event) = connection.event_rx.try_recv() {
                         match event {
                             NetworkEvent::Connected => {
@@ -1819,6 +1820,10 @@ mod tests {
                             NetworkEvent::ChunkLoaded { .. } => {
                                 trace.push("ChunkLoaded".into());
                                 chunk = true;
+                            }
+                            NetworkEvent::PlayerPosition { .. } => {
+                                trace.push("PlayerPosition".into());
+                                position = true;
                             }
                             NetworkEvent::Disconnected { reason } => {
                                 panic!(
@@ -1843,6 +1848,36 @@ mod tests {
             assert!(player_login, "client never emitted PlayerLogin");
             assert!(dimension, "client never emitted DimensionInfo");
             assert!(chunk, "client never emitted ChunkLoaded");
+            assert!(position, "client never emitted PlayerPosition");
+
+            connection
+                .packet_tx
+                .send(ServerboundGamePacket::PlayerLoaded(
+                    azalea_protocol::packets::game::s_player_loaded::ServerboundPlayerLoaded,
+                ));
+            trace.push("PlayerLoaded".into());
+
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    while let Ok(event) = connection.event_rx.try_recv() {
+                        match event {
+                            NetworkEvent::TimeUpdate { .. } => return,
+                            NetworkEvent::Disconnected { reason } => {
+                                panic!(
+                                    "integrated server disconnected after PlayerLoaded: {reason}; \
+                                     trace={trace:?}"
+                                )
+                            }
+                            _ => {}
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
+            })
+            .await
+            .unwrap_or_else(|_| {
+                panic!("server did not continue ticking after PlayerLoaded; trace={trace:?}")
+            });
 
             drop(connection);
             drop(startup);
