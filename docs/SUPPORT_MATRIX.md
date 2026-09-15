@@ -47,3 +47,6 @@ claim of complete Minecraft survival gameplay.
 Client support for receiving or rendering an entity, boss bar, particle, sound,
 or packet does not imply that the integrated server implements the associated
 AI, spawning rules, combat encounter, progression, or persistence behavior.
+
+The dependency-ordered implementation and validation plan for closing these
+client and integrated-server gaps is maintained in [`GAP_ROADMAP.md`](GAP_ROADMAP.md).
