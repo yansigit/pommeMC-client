@@ -166,7 +166,6 @@ fn bake_chest_layer(
 /// Chest models in variant order [single, double-left, double-right], from
 /// vanilla `ChestModel::createSingleBodyLayer` / `createDoubleBodyLeftLayer` /
 /// `createDoubleBodyRightLayer`.
-// TODO: copper chest variants (26.2) are not rendered yet.
 pub fn bake_chest_models() -> Vec<BakedEntityModel> {
     vec![
         bake_chest_layer(1.0, 14.0, 7.0, 2.0, FACE_ALL),

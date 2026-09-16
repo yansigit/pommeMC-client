@@ -1670,15 +1670,18 @@ impl AppCore {
                 NetworkEvent::EntityPose { id, is_crouching } => {
                     game.entity_store.set_crouching(id, is_crouching);
                 }
-                // TODO: remote players' sleeping pose rendering.
                 NetworkEvent::EntitySleepingPos { id, pos } => {
                     if id == game.player.entity_id {
                         game.player.sleeping_pos = pos;
+                    } else if let Some(e) = game.entity_store.living.get_mut(&id) {
+                        e.sleeping_pos = pos;
                     }
                 }
                 NetworkEvent::EntityWakeUp { id } => {
                     if id == game.player.entity_id {
                         game.player.wake_up();
+                    } else if let Some(e) = game.entity_store.living.get_mut(&id) {
+                        e.sleeping_pos = None;
                     }
                 }
                 NetworkEvent::SheepEatStart { id } => {
@@ -1735,15 +1738,22 @@ impl AppCore {
                 NetworkEvent::EntityDamaged { id } => hurt_entity(game, id, None),
                 NetworkEvent::HurtAnimation { id, yaw } => hurt_entity(game, id, Some(yaw)),
                 NetworkEvent::EntityDied { id } => {
-                    // TODO: vanilla's event 3 plays every living entity's
-                    // getDeathSound client-side; pomme has no per-kind death
-                    // sound table yet, so only the player's is played here.
                     if id == game.player.entity_id {
                         let pitch = (fastrand::f32() - fastrand::f32()) * 0.2 + 1.0;
                         self.audio.play_world_sound(
                             &crate::audio::SoundRef::event("entity.player.death"),
                             crate::audio::CATEGORY_PLAYERS,
                             game.player.position,
+                            1.0,
+                            pitch,
+                            fastrand::u64(..),
+                        );
+                    } else if let Some(pos) = game.entity_positions.get(&id) {
+                        let pitch = (fastrand::f32() - fastrand::f32()) * 0.2 + 1.0;
+                        self.audio.play_world_sound(
+                            &crate::audio::SoundRef::event("entity.generic.death"),
+                            crate::audio::CATEGORY_NEUTRAL,
+                            *pos,
                             1.0,
                             pitch,
                             fastrand::u64(..),

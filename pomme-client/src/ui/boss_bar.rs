@@ -43,8 +43,7 @@ pub struct BossBar {
     pub color: u8,
     /// Wire ordinal: progress, then notched_6/10/12/20 (sprite index - 1).
     pub overlay: u8,
-    // TODO: darken_screen (lightmap tint), play_music (End boss music), and
-    // create_world_fog (fog pull-in, sky hidden) have no client effects yet.
+    /// Boss bar environmental flags from server updates.
     pub darken_screen: bool,
     pub play_music: bool,
     pub create_world_fog: bool,
@@ -139,5 +138,17 @@ impl BossBarState {
 
     pub fn iter(&self) -> impl Iterator<Item = &BossBar> {
         self.bars.iter().map(|(_, b)| b)
+    }
+
+    pub fn any_darken_screen(&self) -> bool {
+        self.bars.iter().any(|(_, b)| b.darken_screen)
+    }
+
+    pub fn any_play_music(&self) -> bool {
+        self.bars.iter().any(|(_, b)| b.play_music)
+    }
+
+    pub fn any_create_world_fog(&self) -> bool {
+        self.bars.iter().any(|(_, b)| b.create_world_fog)
     }
 }

@@ -54,6 +54,8 @@ pub const CATEGORY_BLOCKS: u8 = SoundCategory::Blocks as u8;
 /// `SoundSource::PLAYERS` index, for client-side player sounds (e.g. item
 /// pickup).
 pub const CATEGORY_PLAYERS: u8 = SoundCategory::Players as u8;
+pub const CATEGORY_NEUTRAL: u8 = SoundCategory::Neutral as u8;
+pub const CATEGORY_HOSTILE: u8 = SoundCategory::Hostile as u8;
 
 /// `SoundSource::AMBIENT` index, for local ambience (e.g. the portal trigger).
 pub const CATEGORY_AMBIENT: u8 = SoundCategory::Ambient as u8;

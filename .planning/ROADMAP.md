@@ -9,7 +9,7 @@ This roadmap closes all documented compatibility, gameplay, rendering, and serve
 - [x] **Phase 1: Protocol Translation Closure (Wave 2)** - Complete all remaining legacy packet translations (763–774) and split translation modules.
 - [x] **Phase 2: Authoritative State & Combat Parity (Wave 3)** - Centralize attribute-driven reach/speed and active item use overlays.
 - [x] **Phase 3: Fluid & World Rendering Parity (Wave 4A)** - Implement per-corner water height averaging, flow vectors, and depth sorting.
-- [ ] **Phase 4: Entity Models, Layers & Presentation (Wave 4B)** - Add armor/saddle layers, sleeping pose, debug hitboxes, and living sound events.
+- [x] **Phase 4: Entity Models, Layers & Presentation (Wave 4B)** - Add armor/saddle layers, sleeping pose, debug hitboxes, and living sound events.
 - [ ] **Phase 5: Containers & Inventory Semantics (Wave 5)** - Complete specialized container screens, bed chat, and creative inventory interaction.
 - [ ] **Phase 6: SteelMC Spawning & Tier 1 Hostiles (Wave 6A)** - Implement natural mob spawning cycles, chunk caps, and core hostile mob AI.
 - [ ] **Phase 7: SteelMC Passives, Encounters & Bosses (Wave 6B)** - Add passive mob interactions, raids, Wither fight, and Ender Dragon fight.

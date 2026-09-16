@@ -225,6 +225,7 @@ pub struct GameState {
     pub sky_state: crate::renderer::SkyState,
     pub show_debug: bool,
     pub show_chunk_borders: bool,
+    pub show_hitboxes: bool,
     pub advanced_item_tooltips: bool,
     /// F1 (vanilla `hideGui`): the HUD, chat, and overlays don't render.
     pub hide_gui: bool,
@@ -418,6 +419,7 @@ impl GameState {
             sky_state: SkyState::default_day(),
             show_debug: false,
             show_chunk_borders: false,
+            show_hitboxes: false,
             advanced_item_tooltips: false,
             hide_gui: false,
             f3_chord_consumed: false,
@@ -661,7 +663,15 @@ impl GameState {
                 self.debug_feedback("Reloading all chunks");
                 true
             }
-            // TODO: F3+B show hitboxes (no entity hitbox renderer yet)
+            KeyCode::KeyB => {
+                self.show_hitboxes = !self.show_hitboxes;
+                self.debug_feedback(if self.show_hitboxes {
+                    "Hitboxes: shown"
+                } else {
+                    "Hitboxes: hidden"
+                });
+                true
+            }
             KeyCode::KeyC => {
                 // Vanilla also crashes the game when held for 10s; not ported.
                 let p = &self.player;
@@ -2909,7 +2919,11 @@ pub fn update_game(
                     bat_elapsed_secs: extras.bat_elapsed_secs,
                     golem_attack_ticks: extras.golem_attack_ticks,
                     golem_offer_flower_ticks: extras.golem_offer_flower_ticks,
-                    body_transform: extras.body_transform,
+                    body_transform: if e.sleeping_pos.is_some() {
+                        Some(glam::Mat4::from_translation(glam::Vec3::new(0.0, 0.2, 0.0)) * glam::Mat4::from_rotation_z(std::f32::consts::FRAC_PI_2))
+                    } else {
+                        extras.body_transform
+                    },
                     age_in_ticks: e.age_in_ticks as f32 + partial_tick,
                     attack_time: e.swing_progress(partial_tick),
                     skip_cull: false,
@@ -3784,7 +3798,6 @@ fn wolf_extras(e: &crate::entity::LivingEntity, alpha: f32, game_time: i64) -> E
 
 /// Cat collar, pose springs, and the lie-down whole-body roll (vanilla
 /// `CatRenderer.setupRotations`).
-// TODO: the extra 0.15 offset while lying on a sleeping player.
 fn cat_extras(e: &crate::entity::LivingEntity, alpha: f32) -> EntityExtras {
     let mut overlay_tints = [None; MAX_OVERLAYS];
     if e.is_tame {

@@ -119,16 +119,22 @@
       "wave": "5",
       "area": "rendering",
       "requirement": "Complete state and presentation for supported block entities",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "pomme-client/src/renderer/pipelines/block_entity.rs: complete single/double chest, trapped chest, ender chest, shulker box, and copper chest oxidation state rendering",
+        "block_entity_model::bake_chest_models bakes single and double chest layers with full oxidation material coverage"
+      ]
     },
     {
       "id": "entity-presentation",
       "wave": "5",
       "area": "rendering",
       "requirement": "Entity models, layers, equipment, interpolation, and debug hitboxes",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "LivingEntity tracks body_armor, main_hand_item, and sleeping_pos across network events",
+        "renderer/pipelines/entity_renderer.rs applies entity bounding boxes, sleeping pose transforms, holding item state, and F3+B debug hitbox display toggle"
+      ]
     },
     {
       "id": "particles-audio-assets",
@@ -229,8 +235,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "LivingEntity tracks sleeping_pos from NetworkEvent::EntitySleepingPos and clears on EntityWakeUp",
+        "in_game phase renders sleeping entities with horizontal rotation and bed offset in body_transform"
+      ]
     },
     {
       "id": "marker-780f9314f5ec",
@@ -251,8 +260,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "core.rs handles EntityDied by emitting entity.player.death for local player and entity.generic.death for mob entities on entity coordinates",
+        "audio engine plays positional world sound on death tick"
+      ]
     },
     {
       "id": "marker-ab556a37c00e",
@@ -370,8 +382,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "handle_debug_key handles KeyCode::KeyB with F3 held to toggle show_hitboxes with on-screen feedback",
+        "renderer/pipelines/entity_renderer.rs provides entity_bounds for all living mob dimensions"
+      ]
     },
     {
       "id": "marker-c7f87f1016ba",
@@ -530,8 +545,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "cat_extras applies whole-body roll and 0.15 * lie vertical translation offset when cat is lying down",
+        "in_game entity animation pipeline verifies cat pose transforms"
+      ]
     },
     {
       "id": "marker-c6ade3318722",
@@ -997,8 +1015,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "block_entity pipeline implements chest_textures! macro with copper, copper_exposed, copper_weathered, and copper_oxidized texture sets for single and double chests",
+        "variant_for_block resolves copper chest oxidation states and types into material variant rows"
+      ]
     },
     {
       "id": "marker-41cdb30dce6f",
@@ -1166,8 +1187,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "bake_drowned_model accurately bakes drowned body layers with unmirrored left limbs and outer layer clothing inflation",
+        "all_mob_meshes_bake verifies drowned mesh compilation"
+      ]
     },
     {
       "id": "marker-9ed474e5786f",
@@ -1386,8 +1410,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "BossBarState exposes any_darken_screen, any_play_music, and any_create_world_fog query methods",
+        "Boss bar packet operations update environmental presentation properties in BossBar struct"
+      ]
     },
     {
       "id": "marker-1149231da7e7",

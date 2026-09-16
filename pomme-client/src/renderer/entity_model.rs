@@ -672,8 +672,6 @@ pub fn bake_husk_model() -> BakedEntityModel {
 /// Vanilla `DrownedModel.createBodyLayer(g)`: the zombie mesh with the left
 /// arm and leg given their own UV regions instead of mirrored ones. `g` 0.25
 /// is the clothing layer.
-// TODO: swim pose and body pitch (`DrownedModel.setupAnim` swimAmount path)
-// once a swim_amount ramp from the pose metadata exists.
 pub fn bake_drowned_model(g: f32) -> BakedEntityModel {
     let mut parts = zombie_parts();
     // Vanilla gives the drowned's left limbs their own UV regions.

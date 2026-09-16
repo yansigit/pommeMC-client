@@ -3,7 +3,7 @@ pub mod villager;
 
 use std::collections::HashMap;
 
-use azalea_core::position::ChunkPos;
+use azalea_core::position::{BlockPos, ChunkPos};
 use azalea_registry::builtin::EntityKind;
 use glam::DVec3;
 
@@ -201,6 +201,8 @@ pub struct LivingEntity {
     pub body_armor: Option<String>,
     /// Main hand item name from equipment packets.
     pub main_hand_item: Option<String>,
+    /// Bed block position if entity is sleeping.
+    pub sleeping_pos: Option<BlockPos>,
     /// Packet-driven velocity (vanilla remote entities never integrate their
     /// own); feeds the squid body-rotation sim.
     pub velocity: DVec3,
@@ -349,6 +351,7 @@ impl LivingEntity {
             saddled: false,
             body_armor: None,
             main_hand_item: None,
+            sleeping_pos: None,
             velocity: DVec3::ZERO,
             is_in_water: false,
             x_body_rot: 0.0,
