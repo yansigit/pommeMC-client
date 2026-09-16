@@ -87,12 +87,16 @@
         "--quick-access-singleplayer",
         "--showcase-copper-golem-statues",
         "--capture-gameplay-frame",
-        "--exit-after-screenshot"
+        "--automation-script",
+        "${REPO_ROOT}/acceptance/scripts/inventory-toggle.json",
+        "--automation-trace",
+        "${RUN_DIR}/automation-trace.json"
       ],
       "expected_output": [
         "Entering game state",
         "Connected to server",
         "Player position set",
+        "Automation completed",
         "Saving world data"
       ],
       "expected_files": [
@@ -101,6 +105,12 @@
           "kind": "png",
           "min_bytes": 1000,
           "retain_as": "integrated-gameplay.png"
+        },
+        {
+          "path": "${RUN_DIR}/automation-trace.json",
+          "kind": "json",
+          "min_bytes": 200,
+          "retain_as": "automation-trace.json"
         }
       ]
     }

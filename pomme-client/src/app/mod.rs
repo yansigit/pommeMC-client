@@ -1,3 +1,4 @@
+pub mod automation;
 pub mod core;
 pub mod input;
 pub mod phases;
@@ -35,6 +36,9 @@ pub enum WindowError {
 
     #[error("renderer error: {0}")]
     Renderer(#[from] renderer::RendererError),
+
+    #[error("automation error: {0}")]
+    Automation(String),
 }
 
 const TICK_RATE: f32 = 1.0 / 20.0;
@@ -55,6 +59,7 @@ pub struct App {
     #[cfg(feature = "singleplayer")]
     showcase_copper_golem_statues: bool,
     exit_after_screenshot: bool,
+    automation: Option<automation::Automation>,
 }
 
 /// Port of vanilla `FramerateLimiter`: paces to a target fps by sleeping most
@@ -130,6 +135,7 @@ impl App {
         capture_gameplay_frame: bool,
         showcase_copper_golem_statues: bool,
         exit_after_screenshot: bool,
+        automation: Option<automation::Automation>,
     ) -> Self {
         Self {
             phase: StateSlot::new(AppPhase::Setup {
@@ -148,12 +154,16 @@ impl App {
             #[cfg(feature = "singleplayer")]
             showcase_copper_golem_statues,
             exit_after_screenshot,
+            automation,
         }
     }
 
     pub fn run(&mut self) -> Result<(), WindowError> {
         let event_loop = EventLoop::new()?;
         event_loop.run_app(self)?;
+        if let Some(automation) = &mut self.automation {
+            automation.finish().map_err(WindowError::Automation)?;
+        }
         Ok(())
     }
 
@@ -637,6 +647,13 @@ impl ApplicationHandler for App {
                 let core = &mut self.core;
                 let capture_gameplay_frame = self.capture_gameplay_frame;
                 let gameplay_capture_wait_frames = self.gameplay_capture_wait_frames;
+
+                if let Some(automation) = &mut self.automation {
+                    automation.before_input(self.phase.get(), &mut core.input);
+                    if automation.should_exit() {
+                        event_loop.exit();
+                    }
+                }
 
                 let should_apply_cursor_grab = core.input.update(&mut self.phase);
                 if should_apply_cursor_grab

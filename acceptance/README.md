@@ -51,3 +51,16 @@ Use `--list` to inspect the matrix or repeat `--scenario <id>` to run a focused
 subset. Results, stdout, stderr, and validated retained artifacts are written to
 `target/acceptance/<run-id>/<scenario-id>`. Temporary game and world directories
 are deleted unless `--keep-temp` is supplied.
+
+## Scripted client actions
+
+`scripts/*.json` drives the client without GUI automation. Invoke one with
+`--automation-script <path> --automation-trace <path>`. Scripts can wait for an
+application phase, press or release a named `Action`, wait a bounded number of
+frames, assert observable UI state, and exit. Presses are folded into
+`InputState` and consumed by the same frame handlers as keyboard, mouse, and
+controller input. The client never mutates the asserted gameplay state directly.
+
+The trace records every dispatched action and assertion. A timeout, failed
+assertion, malformed script, or application exit before the explicit `exit`
+step produces a non-zero client result and a failure trace.

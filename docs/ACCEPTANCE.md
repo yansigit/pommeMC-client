@@ -18,6 +18,11 @@ render, and an integrated-server gameplay render. Every scenario has a bounded
 timeout and retains its result record, logs, and validated JSON or PNG evidence
 under `target/acceptance/<run-id>`.
 
+The integrated gameplay scenario also runs
+`acceptance/scripts/inventory-toggle.json`. It waits for the real `InGame`
+phase, opens and closes the inventory through the normal `Action`/`InputState`
+path, asserts both visible states, and retains the frame-by-frame action trace.
+
 Run only the lower-level integrated-server scenario with:
 
 ```sh

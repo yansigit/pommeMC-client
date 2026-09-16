@@ -137,6 +137,17 @@ fn main() {
         .inspect_err(|e| tracing::warn!("Discord rich presence unavailable: {e}"))
         .ok();
 
+    let automation = match (&args.automation_script, &args.automation_trace) {
+        (Some(script), Some(trace)) => match app::automation::Automation::load(script, trace) {
+            Ok(automation) => Some(automation),
+            Err(error) => {
+                eprintln!("Failed to load automation script: {error}");
+                std::process::exit(2);
+            }
+        },
+        _ => None,
+    };
+
     if let Err(e) = App::new(
         version.to_owned(),
         data_dirs,
@@ -149,6 +160,7 @@ fn main() {
         args.capture_gameplay_frame,
         args.showcase_copper_golem_statues,
         args.exit_after_screenshot,
+        automation,
     )
     .run()
     {

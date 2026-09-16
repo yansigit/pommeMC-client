@@ -55,4 +55,13 @@ pub struct LaunchArgs {
     /// Exit after the requested screenshot has been written.
     #[arg(long)]
     pub exit_after_screenshot: bool,
+
+    /// Run a checked-in non-GUI action script through the normal input
+    /// handlers.
+    #[arg(long, requires = "automation_trace")]
+    pub automation_script: Option<String>,
+
+    /// Write the action script's event and assertion trace as JSON.
+    #[arg(long, requires = "automation_script")]
+    pub automation_trace: Option<String>,
 }

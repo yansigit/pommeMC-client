@@ -16,7 +16,8 @@ pub const STICK_MOVEMENT_THRESHOLD: f32 = 0.25;
 /// an "instant".
 pub const SHORT_RUMBLE_TIME: u32 = 5;
 
-#[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
+#[derive(Hash, PartialEq, Eq, Clone, Copy, Debug, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Action {
     Jump,
     Sneak,
