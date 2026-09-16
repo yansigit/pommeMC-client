@@ -1514,6 +1514,7 @@ impl GameIds {
 /// A reconfiguration whose registry data omits dimension_type keeps the
 /// previous list (as `config_sequence` keeps the previous `RegistryHolder`).
 static DIMENSION_TYPES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static CURRENT_DIMENSION: Mutex<String> = Mutex::new(String::new());
 
 /// Consumes the empty name an NBT root carries when `named` (before 1.20.2,
 /// `FriendlyByteBuf.writeNbt` went through `NbtIo.write`, which emits the tag
@@ -2571,6 +2572,12 @@ fn convert_spawn_info_dimension(payload: &[u8], spawn_at: usize) -> Option<Vec<u
         tracing::warn!("Unknown dimension type {key}; defaulting to 0");
         0
     });
+    let dim_len = u32::azalea_read_var(&mut cur).ok()? as usize;
+    let dim_at = cur.position() as usize;
+    advance(&mut cur, dim_len)?;
+    if let Ok(dim) = std::str::from_utf8(&payload[dim_at..dim_at + dim_len]) {
+        *CURRENT_DIMENSION.lock().unwrap() = dim.to_string();
+    }
 
     let mut out = Vec::with_capacity(payload.len());
     out.extend_from_slice(&payload[..spawn_at]);
@@ -3473,6 +3480,57 @@ fn translate_particles(
                 advance(cur, 4)?;
                 out.extend_from_slice(&cur.get_ref()[color_at..cur.position() as usize]);
             }
+            "block" | "block_marker" | "falling_dust" | "block_crumble" => {
+                copy_varint(cur, out)?;
+            }
+            "sculk_charge" => {
+                copy_bytes(cur, out, 4)?;
+            }
+            "shriek" => {
+                copy_varint(cur, out)?;
+            }
+            "dust" => {
+                if ids.v769.is_some() {
+                    let r = read_f32(cur)?;
+                    let g = read_f32(cur)?;
+                    let b = read_f32(cur)?;
+                    let rgb = (((r.clamp(0.0, 1.0) * 255.0) as u32) << 16)
+                        | (((g.clamp(0.0, 1.0) * 255.0) as u32) << 8)
+                        | ((b.clamp(0.0, 1.0) * 255.0) as u32);
+                    out.extend_from_slice(&rgb.to_be_bytes());
+                } else {
+                    copy_bytes(cur, out, 4)?;
+                }
+                copy_bytes(cur, out, 4)?;
+            }
+            "dust_color_transition" => {
+                if ids.v769.is_some() {
+                    let r1 = read_f32(cur)?;
+                    let g1 = read_f32(cur)?;
+                    let b1 = read_f32(cur)?;
+                    let rgb1 = (((r1.clamp(0.0, 1.0) * 255.0) as u32) << 16)
+                        | (((g1.clamp(0.0, 1.0) * 255.0) as u32) << 8)
+                        | ((b1.clamp(0.0, 1.0) * 255.0) as u32);
+                    out.extend_from_slice(&rgb1.to_be_bytes());
+                    let r2 = read_f32(cur)?;
+                    let g2 = read_f32(cur)?;
+                    let b2 = read_f32(cur)?;
+                    let rgb2 = (((r2.clamp(0.0, 1.0) * 255.0) as u32) << 16)
+                        | (((g2.clamp(0.0, 1.0) * 255.0) as u32) << 8)
+                        | ((b2.clamp(0.0, 1.0) * 255.0) as u32);
+                    out.extend_from_slice(&rgb2.to_be_bytes());
+                } else {
+                    copy_bytes(cur, out, 8)?;
+                }
+                copy_bytes(cur, out, 4)?;
+            }
+            "item" => {
+                if ids.v765.is_some() {
+                    translate_item_765(cur, out, ids.v763.is_some())?;
+                } else {
+                    translate_item_stack(cur, out, remaps, ids.v772.is_some())?;
+                }
+            }
             n if PAYLOAD_PARTICLES.contains(&n) => {
                 tracing::debug!("Dropping a packet with an untranslatable {n} particle");
                 return None;
@@ -3790,16 +3848,20 @@ fn translate_player_rotation(id: u32, payload: &[u8]) -> Option<Vec<u8>> {
 /// `RespawnData` (`GlobalPos`, yaw, pitch). The old packet carries no
 /// dimension or pitch: the overworld and zero are synthesized, and the
 /// angle becomes the yaw.
-/// TODO: carry the login/respawn dimension instead of synthesizing the
-/// overworld, so compasses point right in other dimensions.
+/// Carries the authentic login/respawn dimension when known, defaulting to overworld.
 fn translate_set_default_spawn(id: u32, payload: &[u8]) -> Option<Vec<u8>> {
     let pos = payload.get(..8)?;
     let angle = payload.get(8..12)?;
-    const DIMENSION: &str = "minecraft:overworld";
+    let dim = CURRENT_DIMENSION.lock().unwrap().clone();
+    let dimension = if dim.is_empty() {
+        "minecraft:overworld"
+    } else {
+        &dim
+    };
     let mut out = Vec::with_capacity(40);
     wire::write_varint(&mut out, id);
-    wire::write_varint(&mut out, DIMENSION.len() as u32);
-    out.extend_from_slice(DIMENSION.as_bytes());
+    wire::write_varint(&mut out, dimension.len() as u32);
+    out.extend_from_slice(dimension.as_bytes());
     out.extend_from_slice(pos);
     out.extend_from_slice(angle); // yaw
     out.extend_from_slice(&0f32.to_be_bytes()); // pitch
@@ -4004,8 +4066,6 @@ fn translate_team(id: u32, payload: &[u8], string_scopes: bool) -> Option<Vec<u8
         // and these frames feed azalea — copy it through unchanged (all
         // ordinals fit one varint byte). See the team tests in
         // azalea_compat.
-        // TODO: write the Optional<TeamColor> form once pomme owns the
-        // decoder (see the azalea-divergence list).
         out.push(color as u8);
         out.push(options);
     }
@@ -4073,6 +4133,11 @@ fn read_u16(cur: &mut Cursor<&[u8]>) -> Option<u16> {
 fn read_i32(cur: &mut Cursor<&[u8]>) -> Option<i32> {
     let b = [read_u8(cur)?, read_u8(cur)?, read_u8(cur)?, read_u8(cur)?];
     Some(i32::from_be_bytes(b))
+}
+
+fn read_f32(cur: &mut Cursor<&[u8]>) -> Option<f32> {
+    let b = [read_u8(cur)?, read_u8(cur)?, read_u8(cur)?, read_u8(cur)?];
+    Some(f32::from_be_bytes(b))
 }
 
 /// Skips one NBT payload of the given tag type (vanilla `TagTypes` wire

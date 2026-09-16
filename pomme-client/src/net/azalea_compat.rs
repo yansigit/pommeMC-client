@@ -1066,6 +1066,81 @@ fn translate_entity_data_particles_772() {
     assert_eq!(&translated[..], &expected[..]);
 }
 
+/// Translates payload particles (block and dust) inside entity data for 1.21.4.
+#[test]
+fn translate_entity_data_payload_particles_769() {
+    use pomme_protocol::{ClientRegistry, RegistryTable};
+
+    let block_type = |table: &RegistryTable| registry_id(table, ClientRegistry::ParticleType, "block");
+    let dust_type = |table: &RegistryTable| registry_id(table, ClientRegistry::ParticleType, "dust");
+
+    // 1. Block particle
+    let mut old_block = Vec::new();
+    wire::write_varint(
+        &mut old_block,
+        old_id(769, Direction::Clientbound, "set_entity_data"),
+    );
+    wire::write_varint(&mut old_block, 12); // entity id
+    old_block.extend_from_slice(&[10, 18, 1]); // index 10, particles serializer (18), one particle
+    wire::write_varint(
+        &mut old_block,
+        block_type(RegistryTable::for_protocol(769).unwrap()),
+    );
+    wire::write_varint(&mut old_block, 42); // block state id
+    old_block.push(0xFF);
+
+    let translated = translation_for(769)
+        .translate_game_frame(old_block.into_boxed_slice())
+        .unwrap();
+
+    let mut expected = Vec::new();
+    wire::write_varint(
+        &mut expected,
+        table_id(Direction::Clientbound, "set_entity_data"),
+    );
+    wire::write_varint(&mut expected, 12);
+    expected.extend_from_slice(&[10, 17, 1]); // 26.2 particles serializer (17)
+    wire::write_varint(&mut expected, block_type(RegistryTable::latest()));
+    wire::write_varint(&mut expected, 42);
+    expected.push(0xFF);
+    assert_eq!(&translated[..], &expected[..]);
+
+    // 2. Dust particle (3 floats -> int RGB + scale)
+    let mut old_dust = Vec::new();
+    wire::write_varint(
+        &mut old_dust,
+        old_id(769, Direction::Clientbound, "set_entity_data"),
+    );
+    wire::write_varint(&mut old_dust, 12); // entity id
+    old_dust.extend_from_slice(&[10, 18, 1]);
+    wire::write_varint(
+        &mut old_dust,
+        dust_type(RegistryTable::for_protocol(769).unwrap()),
+    );
+    for f in [1.0f32, 0.5, 0.25, 2.0] {
+        old_dust.extend_from_slice(&f.to_be_bytes()); // r, g, b, scale
+    }
+    old_dust.push(0xFF);
+
+    let translated_dust = translation_for(769)
+        .translate_game_frame(old_dust.into_boxed_slice())
+        .unwrap();
+
+    let mut expected_dust = Vec::new();
+    wire::write_varint(
+        &mut expected_dust,
+        table_id(Direction::Clientbound, "set_entity_data"),
+    );
+    wire::write_varint(&mut expected_dust, 12);
+    expected_dust.extend_from_slice(&[10, 17, 1]);
+    wire::write_varint(&mut expected_dust, dust_type(RegistryTable::latest()));
+    let rgb = (255u32 << 16) | (127u32 << 8) | 63u32;
+    expected_dust.extend_from_slice(&rgb.to_be_bytes());
+    expected_dust.extend_from_slice(&2.0f32.to_be_bytes());
+    expected_dust.push(0xFF);
+    assert_eq!(&translated_dust[..], &expected_dust[..]);
+}
+
 /// A 1.21.8 `profile` item component (61 there; bare optional name/uuid +
 /// properties) is rewrapped into 26.2's `ResolvableProfile` partial arm
 /// with an empty skin patch (see `translate_old_profile`).
@@ -1220,6 +1295,36 @@ fn translate_set_default_spawn_772() {
     );
     assert_eq!(p.yaw, 45.0);
     assert_eq!(p.pitch, 0.0);
+}
+
+/// `set_default_spawn_position` uses the authentic login dimension key.
+#[test]
+fn translate_set_default_spawn_carries_login_dimension() {
+    let mut old_login = Vec::new();
+    wire::write_varint(&mut old_login, old_id(765, Direction::Clientbound, "login"));
+    old_login.extend_from_slice(&1i32.to_be_bytes()); // entity id
+    old_login.push(0); // hardcore: false
+    wire::write_varint(&mut old_login, 1); // 1 level
+    write_utf(&mut old_login, "minecraft:the_nether");
+    wire::write_varint(&mut old_login, 20); // max players
+    wire::write_varint(&mut old_login, 10); // chunk radius
+    wire::write_varint(&mut old_login, 10); // sim distance
+    old_login.extend_from_slice(&[0, 0, 0]); // reducedDebug, showDeathScreen, doLimitedCrafting
+    write_spawn_info_765(&mut old_login, "minecraft:custom_end", "minecraft:the_nether");
+    let _ = translation_for(765).translate_game_frame(old_login.into_boxed_slice());
+
+    let mut old = Vec::new();
+    wire::write_varint(
+        &mut old,
+        old_id(772, Direction::Clientbound, "set_default_spawn_position"),
+    );
+    old.extend_from_slice(&64u64.to_be_bytes());
+    old.extend_from_slice(&45.0f32.to_be_bytes()); // angle
+
+    let ClientboundGamePacket::SetDefaultSpawnPosition(p) = translate_and_decode(772, old) else {
+        panic!("wrong packet");
+    };
+    assert_eq!(p.global_pos.dimension.to_string(), "minecraft:the_nether");
 }
 
 /// 1.21.9 inserted `radius`/`blockCount` after the explosion center and
@@ -1912,6 +2017,67 @@ fn translate_level_particles_768() {
     assert!(p.override_limiter);
     assert!(!p.always_show);
     assert_eq!(p.count, 7);
+}
+
+/// Translates payload particles (block state and dust color/scale) for 1.21.3.
+#[test]
+fn translate_level_particles_block_and_dust_768() {
+    use azalea_entity::particle::Particle;
+
+    // 1. Block particle (768 id: 1 -> 26.2 id: 1)
+    let mut old_block = Vec::new();
+    wire::write_varint(
+        &mut old_block,
+        old_id(768, Direction::Clientbound, "level_particles"),
+    );
+    old_block.push(0); // override limiter
+    for c in [0.0f64, 64.0, 0.0] {
+        old_block.extend_from_slice(&c.to_be_bytes());
+    }
+    for d in [0.0f32, 0.0, 0.0, 0.0] {
+        old_block.extend_from_slice(&d.to_be_bytes());
+    }
+    old_block.extend_from_slice(&1i32.to_be_bytes()); // count
+    wire::write_varint(&mut old_block, 1); // 768 block particle id
+    wire::write_varint(&mut old_block, 42); // block state id
+
+    let ClientboundGamePacket::LevelParticles(p) = translate_and_decode(768, old_block) else {
+        panic!("wrong packet");
+    };
+    let Particle::Block(block) = p.particle else {
+        panic!("expected block particle");
+    };
+    assert_eq!(block.block_state.id(), 42);
+
+    // 2. Dust particle (768 id: 13 -> 26.2 id: 21)
+    let mut old_dust = Vec::new();
+    wire::write_varint(
+        &mut old_dust,
+        old_id(768, Direction::Clientbound, "level_particles"),
+    );
+    old_dust.push(0);
+    for c in [0.0f64, 64.0, 0.0] {
+        old_dust.extend_from_slice(&c.to_be_bytes());
+    }
+    for d in [0.0f32, 0.0, 0.0, 0.0] {
+        old_dust.extend_from_slice(&d.to_be_bytes());
+    }
+    old_dust.extend_from_slice(&1i32.to_be_bytes());
+    wire::write_varint(&mut old_dust, 13); // 768 dust particle id
+    for f in [1.0f32, 0.5, 0.25, 2.0] {
+        old_dust.extend_from_slice(&f.to_be_bytes()); // r, g, b, scale
+    }
+
+    let ClientboundGamePacket::LevelParticles(p) = translate_and_decode(768, old_dust) else {
+        panic!("wrong packet");
+    };
+    let Particle::Dust(dust) = p.particle else {
+        panic!("expected dust particle");
+    };
+    assert_eq!(dust.scale, 2.0);
+    assert_eq!(dust.color.red(), 255);
+    assert_eq!(dust.color.green(), 127);
+    assert_eq!(dust.color.blue(), 63);
 }
 
 /// 1.21.4 appended UPDATE_HAT after UPDATE_LIST_ORDER rather than inserting
