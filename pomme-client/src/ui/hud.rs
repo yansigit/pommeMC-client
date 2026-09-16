@@ -62,6 +62,9 @@ struct Objective {
 #[derive(Default)]
 pub struct Scoreboard {
     sidebar: Option<String>,
+    list: Option<String>,
+    below_name: Option<String>,
+    team_sidebars: HashMap<u8, String>,
     objectives: HashMap<String, Objective>,
     scores: HashMap<ScoreKey, ScoreEntry>,
     teams: HashMap<String, ScoreboardTeam>,
@@ -81,6 +84,9 @@ pub(crate) struct ScoreboardTeam {
 impl Scoreboard {
     pub fn clear(&mut self) {
         self.sidebar = None;
+        self.list = None;
+        self.below_name = None;
+        self.team_sidebars.clear();
         self.objectives.clear();
         self.scores.clear();
         self.teams.clear();
@@ -106,13 +112,66 @@ impl Scoreboard {
             if self.sidebar.as_deref() == Some(&name) {
                 self.sidebar = None;
             }
+            if self.list.as_deref() == Some(&name) {
+                self.list = None;
+            }
+            if self.below_name.as_deref() == Some(&name) {
+                self.below_name = None;
+            }
+            self.team_sidebars.retain(|_, obj| obj != &name);
         }
     }
 
-    pub fn set_display(&mut self, name: Option<String>) {
+    pub fn set_display(
+        &mut self,
+        slot: azalea_protocol::packets::game::c_set_display_objective::DisplaySlot,
+        name: Option<String>,
+    ) {
+        use azalea_protocol::packets::game::c_set_display_objective::DisplaySlot;
         // Vanilla resolves the objective at packet time; an unknown name
         // leaves the slot empty even if the objective arrives later.
-        self.sidebar = name.filter(|name| self.objectives.contains_key(name));
+        let valid = name.filter(|name| self.objectives.contains_key(name));
+        match slot {
+            DisplaySlot::Sidebar => self.sidebar = valid,
+            DisplaySlot::List => self.list = valid,
+            DisplaySlot::BelowName => self.below_name = valid,
+            DisplaySlot::TeamBlack => self.set_team_sidebar(0, valid),
+            DisplaySlot::TeamDarkBlue => self.set_team_sidebar(1, valid),
+            DisplaySlot::TeamDarkGreen => self.set_team_sidebar(2, valid),
+            DisplaySlot::TeamDarkAqua => self.set_team_sidebar(3, valid),
+            DisplaySlot::TeamDarkRed => self.set_team_sidebar(4, valid),
+            DisplaySlot::TeamDarkPurple => self.set_team_sidebar(5, valid),
+            DisplaySlot::TeamGold => self.set_team_sidebar(6, valid),
+            DisplaySlot::TeamGray => self.set_team_sidebar(7, valid),
+            DisplaySlot::TeamDarkGray => self.set_team_sidebar(8, valid),
+            DisplaySlot::TeamBlue => self.set_team_sidebar(9, valid),
+            DisplaySlot::TeamGreen => self.set_team_sidebar(10, valid),
+            DisplaySlot::TeamAqua => self.set_team_sidebar(11, valid),
+            DisplaySlot::TeamRed => self.set_team_sidebar(12, valid),
+            DisplaySlot::TeamLightPurple => self.set_team_sidebar(13, valid),
+            DisplaySlot::TeamYellow => self.set_team_sidebar(14, valid),
+            DisplaySlot::TeamWhite => self.set_team_sidebar(15, valid),
+        }
+    }
+
+    fn set_team_sidebar(&mut self, team_color: u8, name: Option<String>) {
+        if let Some(name) = name {
+            self.team_sidebars.insert(team_color, name);
+        } else {
+            self.team_sidebars.remove(&team_color);
+        }
+    }
+
+    pub fn list_objective(&self) -> Option<&str> {
+        self.list.as_deref()
+    }
+
+    pub fn below_name_objective(&self) -> Option<&str> {
+        self.below_name.as_deref()
+    }
+
+    pub fn team_sidebar_objective(&self, color: u8) -> Option<&str> {
+        self.team_sidebars.get(&color).map(|s| s.as_str())
     }
 
     pub fn set_score(
@@ -1645,5 +1704,35 @@ fn facing_name(y_rot_deg: f32) -> &'static str {
         135..=224 => "North (-Z)",
         225..=314 => "East (+X)",
         _ => "South (+Z)",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use azalea_protocol::packets::game::c_set_display_objective::DisplaySlot;
+
+    #[test]
+    fn scoreboard_tracks_all_display_slots() {
+        let mut sb = Scoreboard::default();
+        sb.set_objective("kills".to_string(), Some(vec![]), None);
+        sb.set_objective("health".to_string(), Some(vec![]), None);
+        sb.set_objective("ping".to_string(), Some(vec![]), None);
+        sb.set_objective("team_red_obj".to_string(), Some(vec![]), None);
+
+        sb.set_display(DisplaySlot::Sidebar, Some("kills".to_string()));
+        sb.set_display(DisplaySlot::List, Some("ping".to_string()));
+        sb.set_display(DisplaySlot::BelowName, Some("health".to_string()));
+        sb.set_display(DisplaySlot::TeamRed, Some("team_red_obj".to_string()));
+
+        assert_eq!(sb.sidebar.as_deref(), Some("kills"));
+        assert_eq!(sb.list_objective(), Some("ping"));
+        assert_eq!(sb.below_name_objective(), Some("health"));
+        assert_eq!(sb.team_sidebar_objective(12), Some("team_red_obj"));
+
+        // Removing objective clears its slot bindings.
+        sb.set_objective("ping".to_string(), None, None);
+        assert_eq!(sb.list_objective(), None);
+        assert_eq!(sb.below_name_objective(), Some("health"));
     }
 }

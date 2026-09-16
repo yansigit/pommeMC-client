@@ -111,6 +111,10 @@ pub enum NetworkEvent {
         entity_id: i32,
         saddled: bool,
     },
+    EntityBodyArmor {
+        entity_id: i32,
+        armor: Option<String>,
+    },
     Waypoint {
         operation: azalea_protocol::packets::game::c_waypoint::WaypointOperation,
         waypoint: azalea_protocol::packets::game::c_waypoint::TrackedWaypoint,
@@ -195,6 +199,7 @@ pub enum NetworkEvent {
         number_format: Option<crate::ui::hud::ScoreNumberFormat>,
     },
     ScoreboardDisplay {
+        slot: azalea_protocol::packets::game::c_set_display_objective::DisplaySlot,
         name: Option<String>,
     },
     ScoreboardScore {

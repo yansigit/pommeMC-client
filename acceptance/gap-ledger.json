@@ -557,8 +557,11 @@
       "occurrence": 0,
       "wave": "2-3",
       "area": "protocol-compatibility",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "SetDisplayObjective packet handler now tracks all display slots (Sidebar, List, BelowName, and Team sidebars) into Scoreboard state",
+        "scoreboard_tracks_all_display_slots tests all display slots and validates cleanup on objective removal"
+      ]
     },
     {
       "id": "marker-0c0145529194",
@@ -568,8 +571,11 @@
       "occurrence": 0,
       "wave": "2-3",
       "area": "protocol-compatibility",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "SetEquipment packet handler now tracks Body slot items into LivingEntity body_armor alongside Saddle",
+        "set_equipment_emits_body_armor tests extraction of Body slot items and saddle into NetworkEvents"
+      ]
     },
     {
       "id": "marker-2b775b36d3dd",

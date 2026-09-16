@@ -484,16 +484,9 @@ pub fn handle_game_packet(
                 number_format,
             });
         }
-        // TODO: track the other display slots too — vanilla prefers the
-        // local team's `sidebar.team.<color>` slot over SIDEBAR, and LIST
-        // drives the tab-overlay score column.
-        ClientboundGamePacket::SetDisplayObjective(p)
-            if matches!(
-                p.slot,
-                azalea_protocol::packets::game::c_set_display_objective::DisplaySlot::Sidebar
-            ) =>
-        {
+        ClientboundGamePacket::SetDisplayObjective(p) => {
             let _ = event_tx.try_send(NetworkEvent::ScoreboardDisplay {
+                slot: p.slot,
                 name: (!p.objective_name.is_empty()).then(|| p.objective_name.clone()),
             });
         }
@@ -713,12 +706,23 @@ pub fn handle_game_packet(
             });
         }
         ClientboundGamePacket::SetEquipment(p) => {
-            // Only the saddle slot is tracked; equipment rendering is a TODO.
             for (slot, item) in &p.slots.slots {
                 if *slot == azalea_inventory::components::EquipmentSlot::Saddle {
                     let _ = event_tx.try_send(NetworkEvent::EntitySaddle {
                         entity_id: p.entity_id.0,
                         saddled: item.is_present(),
+                    });
+                }
+                if *slot == azalea_inventory::components::EquipmentSlot::Body {
+                    let armor = match item {
+                        azalea_inventory::ItemStack::Present(data) => {
+                            Some(crate::player::inventory::item_resource_name(data.kind))
+                        }
+                        azalea_inventory::ItemStack::Empty => None,
+                    };
+                    let _ = event_tx.try_send(NetworkEvent::EntityBodyArmor {
+                        entity_id: p.entity_id.0,
+                        armor,
                     });
                 }
             }
@@ -1832,5 +1836,51 @@ mod tests {
             }
             _ => panic!("expected EntityPoof"),
         }
+    }
+
+    #[test]
+    fn set_equipment_emits_body_armor() {
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let sender = PacketSender::new(out_tx);
+        let (event_tx, event_rx) = crossbeam_channel::bounded(2);
+        let registries = RegistryHolder::default();
+        let command_tree = std::sync::Arc::new(parking_lot::Mutex::new(None));
+        let slots = vec![
+            (
+                azalea_inventory::components::EquipmentSlot::Body,
+                azalea_inventory::ItemStack::Present(azalea_inventory::ItemStackData::new(
+                    azalea_registry::builtin::ItemKind::IronHorseArmor,
+                    1,
+                )),
+            ),
+            (
+                azalea_inventory::components::EquipmentSlot::Saddle,
+                azalea_inventory::ItemStack::Present(azalea_inventory::ItemStackData::new(
+                    azalea_registry::builtin::ItemKind::Saddle,
+                    1,
+                )),
+            ),
+        ];
+        handle_game_packet(
+            &ClientboundGamePacket::SetEquipment(
+                azalea_protocol::packets::game::c_set_equipment::ClientboundSetEquipment {
+                    entity_id: azalea_core::entity_id::MinecraftEntityId(99),
+                    slots: azalea_protocol::packets::game::c_set_equipment::EquipmentSlots { slots },
+                },
+            ),
+            &sender,
+            &event_tx,
+            &registries,
+            &command_tree,
+        );
+        let ev1 = event_rx.recv().unwrap();
+        let ev2 = event_rx.recv().unwrap();
+        let (saddle, body) = match (ev1, ev2) {
+            (NetworkEvent::EntitySaddle { saddled, .. }, NetworkEvent::EntityBodyArmor { armor, .. }) => (saddled, armor),
+            (NetworkEvent::EntityBodyArmor { armor, .. }, NetworkEvent::EntitySaddle { saddled, .. }) => (saddled, armor),
+            _ => panic!("expected EntitySaddle and EntityBodyArmor"),
+        };
+        assert!(saddle);
+        assert_eq!(body.as_deref(), Some("iron_horse_armor"));
     }
 }

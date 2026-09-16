@@ -881,6 +881,11 @@ impl AppCore {
                         e.saddled = saddled;
                     }
                 }
+                NetworkEvent::EntityBodyArmor { entity_id, armor } => {
+                    if let Some(e) = game.entity_store.living.get_mut(&entity_id) {
+                        e.body_armor = armor;
+                    }
+                }
                 NetworkEvent::PlayerExperience { progress, level } => {
                     if progress != game.player.experience_progress {
                         // Vanilla LocalPlayer.setExperienceValues: the first
@@ -1163,8 +1168,8 @@ impl AppCore {
                 } => {
                     game.scoreboard.set_objective(name, display, number_format);
                 }
-                NetworkEvent::ScoreboardDisplay { name } => {
-                    game.scoreboard.set_display(name);
+                NetworkEvent::ScoreboardDisplay { slot, name } => {
+                    game.scoreboard.set_display(slot, name);
                 }
                 NetworkEvent::ScoreboardScore {
                     owner,

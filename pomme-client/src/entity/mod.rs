@@ -197,6 +197,8 @@ pub struct LivingEntity {
     pub has_chest: bool,
     /// Saddle equipment slot occupied (`SetEquipment`); gates the jump bar.
     pub saddled: bool,
+    /// Body equipment slot (horse/wolf armor) item name.
+    pub body_armor: Option<String>,
     /// Packet-driven velocity (vanilla remote entities never integrate their
     /// own); feeds the squid body-rotation sim.
     pub velocity: DVec3,
@@ -343,6 +345,7 @@ impl LivingEntity {
             prev_mouth_anim: 0.0,
             has_chest: false,
             saddled: false,
+            body_armor: None,
             velocity: DVec3::ZERO,
             is_in_water: false,
             x_body_rot: 0.0,
