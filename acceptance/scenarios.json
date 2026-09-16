@@ -37,6 +37,30 @@
       ]
     },
     {
+      "id": "native-secure-chat",
+      "description": "Verify protocol 776 signatures, checksums, and strict unsigned-chat rejection",
+      "protocol": "26.2 (776)",
+      "server_fixture": "strict-in-memory-chat-verifier",
+      "fixture_hash": "${GIT_HEAD}",
+      "account_mode": "deterministic-local-certificate",
+      "timeout_seconds": 120,
+      "command": "cargo",
+      "args": [
+        "test",
+        "-p",
+        "pomme-client",
+        "secure_chat_",
+        "--",
+        "--nocapture"
+      ],
+      "expected_output": [
+        "POMME_SECURE_CHAT_TRACE=",
+        "POMME_SECURE_CHAT_POLICY_TRACE=",
+        "test result: ok. 2 passed"
+      ],
+      "expected_files": []
+    },
+    {
       "id": "title-screen-render",
       "description": "Initialize the real client renderer and capture the first title-screen frame",
       "protocol": "26.2 (776)",

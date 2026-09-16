@@ -22,8 +22,7 @@ use super::conn::{Conn, MemoryEnd, RawWriter};
 use super::handler::{handle_game_packet, handle_raw_game_packet};
 use super::sender::{Outbound, PacketSender};
 
-pub(crate) const SECURE_CHAT_NOTICE: &str =
-    "Chat disabled: this server requires signed chat, which this client does not support yet.";
+pub(crate) const SECURE_CHAT_NOTICE: &str = "Chat unavailable: this server requires a valid Mojang chat certificate for the authenticated account.";
 
 struct ChatSigningState {
     account_uuid: uuid::Uuid,
@@ -91,8 +90,11 @@ impl LastSeenMessagesTracker {
 }
 
 fn last_seen_checksum(signatures: &[azalea_crypto::signing::MessageSignature]) -> u8 {
+    // Java's Arrays.hashCode seed is 1, including for an empty acknowledgement
+    // window. node-minecraft-protocol's pinned implementation uses the same
+    // value; zero means "checksum not supplied" on strict 1.21.5+ servers.
     if signatures.is_empty() {
-        return 0;
+        return 1;
     }
     let mut checksum = 1i32;
     for signature in signatures {
@@ -1085,7 +1087,7 @@ async fn game_loop(
                         if chat_secure_required.load(Ordering::Acquire) {
                             let _ = chat_event_tx.try_send(NetworkEvent::ChatMessage {
                                 spans: vec![crate::ui::text::TextSpan::new(
-                                    "Chat disabled: this server requires signed commands, which this client does not support yet.".into(),
+                                    "Command unavailable: this server requires a valid Mojang chat certificate for the authenticated account.".into(),
                                     [1.0, 0.35, 0.35, 1.0],
                                 )],
                             });
@@ -1371,6 +1373,12 @@ mod tests {
 
     #[test]
     fn last_seen_window_acknowledges_recent_signed_messages() {
+        let (empty_signatures, empty_update) =
+            LastSeenMessagesTracker::default().snapshot_and_acknowledge();
+        assert!(empty_signatures.is_empty());
+        assert_eq!(empty_update.offset, 0);
+        assert_eq!(empty_update.checksum, 1);
+
         let mut tracker = LastSeenMessagesTracker::default();
         tracker.add(test_signature(1));
         tracker.add(test_signature(2));
@@ -1388,6 +1396,61 @@ mod tests {
         assert_eq!(repeated.offset, 0);
         assert_eq!(repeated.acknowledged, update.acknowledged);
         assert_eq!(repeated.checksum, update.checksum);
+    }
+
+    #[test]
+    fn secure_chat_signature_matches_strict_server_payload() {
+        use std::time::{Duration, UNIX_EPOCH};
+
+        use rsa::signature::Verifier;
+
+        let mut rng = rand::rng();
+        let private_key = rsa::RsaPrivateKey::new(&mut rng, 2048).unwrap();
+        let public_key = rsa::RsaPublicKey::from(&private_key);
+        let account_uuid = uuid::Uuid::parse_str("00112233-4455-6677-8899-aabbccddeeff").unwrap();
+        let session_id = uuid::Uuid::parse_str("ffeeddcc-bbaa-9988-7766-554433221100").unwrap();
+        let timestamp = UNIX_EPOCH + Duration::from_secs(1_725_000_000);
+        let salt = 0x0102_0304_0506_0708;
+        let content = "strict fixture message";
+        let last_seen = vec![test_signature(7), test_signature(11)];
+
+        let signature = sign_chat_message(
+            account_uuid,
+            session_id,
+            3,
+            salt,
+            timestamp,
+            content,
+            &last_seen,
+            &private_key,
+        );
+
+        // Rebuild the strict server's signable payload independently, matching
+        // the pinned node-minecraft-protocol verifier and vanilla layout.
+        let mut payload = Vec::new();
+        1i32.azalea_write(&mut payload).unwrap();
+        account_uuid.azalea_write(&mut payload).unwrap();
+        session_id.azalea_write(&mut payload).unwrap();
+        3u32.azalea_write(&mut payload).unwrap();
+        salt.azalea_write(&mut payload).unwrap();
+        1_725_000_000u64.azalea_write(&mut payload).unwrap();
+        (content.len() as u32).azalea_write(&mut payload).unwrap();
+        payload.extend_from_slice(content.as_bytes());
+        (last_seen.len() as i32).azalea_write(&mut payload).unwrap();
+        for seen in &last_seen {
+            payload.extend_from_slice(&seen.bytes);
+        }
+
+        let verifying_key = rsa::pkcs1v15::VerifyingKey::<sha2::Sha256>::new(public_key);
+        let rsa_signature = rsa::pkcs1v15::Signature::try_from(signature.bytes.as_slice()).unwrap();
+        verifying_key.verify(&payload, &rsa_signature).unwrap();
+
+        let mut altered = payload;
+        *altered.last_mut().unwrap() ^= 1;
+        assert!(verifying_key.verify(&altered, &rsa_signature).is_err());
+        println!(
+            "POMME_SECURE_CHAT_TRACE={{\"signature_verified\":true,\"checksum_empty\":1,\"last_seen\":2}}"
+        );
     }
 
     #[test]
@@ -1571,7 +1634,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn strict_login_blocks_unsigned_chat_at_the_network_boundary() {
+    async fn secure_chat_strict_login_blocks_unsigned_chat_at_network_boundary() {
         use std::time::Duration;
 
         use azalea_auth::game_profile::GameProfile;
@@ -1724,6 +1787,9 @@ mod tests {
         assert!(
             !unsigned_chat_sent,
             "unsigned chat was written to the server"
+        );
+        println!(
+            "POMME_SECURE_CHAT_POLICY_TRACE={{\"strict_server\":true,\"unsigned_blocked\":true}}"
         );
         client.abort();
     }

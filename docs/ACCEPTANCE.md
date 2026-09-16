@@ -13,15 +13,23 @@ cargo build -p pomme-acceptance
 target/debug/pomme-acceptance
 ```
 
-This currently executes the integrated protocol flow, a real title-screen
-render, and an integrated-server gameplay render. Every scenario has a bounded
-timeout and retains its result record, logs, and validated JSON or PNG evidence
-under `target/acceptance/<run-id>`.
+This currently executes the integrated protocol flow, a strict native
+secure-chat fixture, a real title-screen render, and an integrated-server
+gameplay render. Every scenario has a bounded timeout and retains its result
+record, logs, and validated JSON or PNG evidence under
+`target/acceptance/<run-id>`.
 
 The integrated gameplay scenario also runs
 `acceptance/scripts/inventory-toggle.json`. It waits for the real `InGame`
 phase, opens and closes the inventory through the normal `Action`/`InputState`
 path, asserts both visible states, and retains the frame-by-frame action trace.
+
+`native-secure-chat` independently rebuilds the protocol 776 signable payload,
+verifies the RSA-SHA256 signature as a strict server would, checks the 1.21.5+
+empty-window checksum, and proves that a strict server never receives unsigned
+chat when no Mojang certificate is available. The payload and checksum layout
+were cross-checked against pinned Azalea and node-minecraft-protocol sources in
+the roadmap research snapshot.
 
 Run only the lower-level integrated-server scenario with:
 

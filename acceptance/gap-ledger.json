@@ -30,8 +30,13 @@
       "wave": "1",
       "area": "protocol",
       "requirement": "Validated native 26.2 login-to-gameplay behavior",
-      "status": "open",
-      "evidence": []
+      "status": "in_progress",
+      "evidence": [
+        "acceptance/scenarios.json native-secure-chat: strict signature, checksum, and unsigned-policy fixture passed",
+        "pomme-client/src/net/connection.rs secure_chat_signature_matches_strict_server_payload: RSA-SHA256 signable payload verified and mutation rejected",
+        "pomme-client/src/net/connection.rs secure_chat_strict_login_blocks_unsigned_chat_at_network_boundary: strict policy blocked unsigned output",
+        "GitHub comparison: azalea-rs/azalea b65fa8c chat_signing.rs and PrismarineJS/node-minecraft-protocol 0ebdd51 client/chat.js, server/chat.js, datatypes/checksums.js"
+      ]
     },
     {
       "id": "legacy-translation",
