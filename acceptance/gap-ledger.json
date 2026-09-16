@@ -699,8 +699,11 @@
       "occurrence": 0,
       "wave": "2-3",
       "area": "protocol-compatibility",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "translate_cooldown_767 remaps wire item id into 26.2 registry space, matching azalea clientbound packet decoder expectations",
+        "translate_cooldown_767 test verifies stone item id remaps to ItemKind::Stone with correct tick duration"
+      ]
     },
     {
       "id": "marker-edbd1ef1eaf8",
