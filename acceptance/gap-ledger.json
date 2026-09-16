@@ -752,11 +752,8 @@
       "occurrence": 0,
       "wave": "2-3",
       "area": "protocol-compatibility",
-      "status": "closed",
-      "evidence": [
-        "translate_particles now handles block states, sculk_charge, shriek, dust (including float-to-int conversion for pre-1.21.5), dust_color_transition, and item stacks",
-        "translate_entity_data_payload_particles_769 tests block and dust particles inside entity metadata"
-      ]
+      "status": "open",
+      "evidence": []
     },
     {
       "id": "marker-406fd7868806",
@@ -766,11 +763,8 @@
       "occurrence": 0,
       "wave": "2-3",
       "area": "protocol-compatibility",
-      "status": "closed",
-      "evidence": [
-        "CURRENT_DIMENSION tracks authentic dimension resource key from login and respawn frames, and translate_set_default_spawn forwards it",
-        "translate_set_default_spawn_carries_login_dimension verifies the authentic Nether dimension propagates to set_default_spawn_position"
-      ]
+      "status": "open",
+      "evidence": []
     },
     {
       "id": "marker-fbd3f0cfa68f",
@@ -780,11 +774,8 @@
       "occurrence": 0,
       "wave": "2-3",
       "area": "protocol-compatibility",
-      "status": "closed",
-      "evidence": [
-        "translate_team preserves ChatFormatting ordinal matching azalea's clientbound packet decoder expectations",
-        "translate_set_player_team_26_1, translate_set_player_team_764, and translate_set_player_team_769 verify color ordinal preservation across versions"
-      ]
+      "status": "open",
+      "evidence": []
     },
     {
       "id": "marker-992ca495b431",
