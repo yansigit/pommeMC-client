@@ -21,8 +21,8 @@
         "acceptance/scenarios.json: integrated protocol, title render, and integrated gameplay scenarios",
         "cargo test -p pomme-acceptance: 3 runner tests passed",
         "target/debug/pomme-acceptance: all three checked-in scenarios passed through public client and integrated-server paths",
-        "acceptance/scripts/inventory-toggle.json: real gameplay acceptance opened and closed inventory through InputState action injection and asserted both states",
-        "pomme-client/src/app/automation.rs: bounded phase waits, input actions, state assertions, non-zero failures, and retained JSON traces"
+        "acceptance/scripts/gameplay-actions.json: real gameplay acceptance opens and closes inventory, moves through normal input, mines a targeted block, and places it back",
+        "pomme-client/src/app/automation.rs: bounded phase waits, input actions, UI/position/held-item/targeted-block assertions, non-zero failures, and retained JSON traces"
       ]
     },
     {
@@ -67,16 +67,28 @@
       "wave": "4",
       "area": "physics",
       "requirement": "Generated collision and outline data without unsupported full-cube fallbacks",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "pomme-client/src/world/block/data/shapes-26.2.json: 913 deduplicated generated shapes classify all 32,366 current block states for collision and outline use",
+        "pomme-client/src/physics/block_shape.rs: generated lookup, vanilla random offsets, and separate collision/outline paths replace runtime family fallbacks",
+        "world::block::tests::generated_shapes_cover_every_supported_state: every embedded protocol state maps intentionally or fails closed",
+        "physics::collision::tests::generated_slab_shape_reaches_collision_collection and player::interaction::tests::raycast_uses_generated_outline_instead_of_a_full_cube exercise the real collision and targeting consumers",
+        "pomme-client/src/world/block/data/block_physics-26.2.json: generated friction, speed, jump, and bounce values cover all 1,196 current blocks"
+      ]
     },
     {
       "id": "movement-interaction-combat",
       "wave": "4",
       "area": "gameplay",
       "requirement": "Movement, fluids, interaction rollback, mining, placement, and combat parity",
-      "status": "open",
-      "evidence": []
+      "status": "in_progress",
+      "evidence": [
+        "acceptance/scripts/gameplay-actions.json: public integrated gameplay holds normal forward input and asserts bounded world-position movement",
+        "acceptance/scripts/gameplay-actions.json: captures the real crosshair target, mines it to air, places smooth stone back, and asserts the restored client world state",
+        "target/debug/pomme-acceptance --scenario integrated-gameplay-render passed against in-process SteelMC with retained screenshot and automation trace",
+        "pomme-client/src/physics/movement.rs: packet-driven attributes, spectator noclip, fall-distance edge behavior, generated block modifiers, and collision-backed tests are implemented",
+        "pomme-client/src/player/interaction.rs: authoritative abilities, spear STAB, server-started item use, and entity-consumable fallthrough are implemented; rejected-action rollback and the full fluid/combat matrix remain open"
+      ]
     },
     {
       "id": "inventory-semantics",

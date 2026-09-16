@@ -9,12 +9,13 @@ It is intentionally stricter than a feature checklist. A gap is closed only when
 its user-visible behavior is exercised through the public client path with a
 bounded, reproducible test.
 
-> **Implementation status: open.** This is a researched implementation plan, not
-> a completion report. Waves 0 through 8 remain to be implemented. The work that
-> accompanied this document only fixed macOS Vulkan loader linking and two
-> pre-existing Clippy ordering failures, then validated the current baseline. It
-> did not implement the protocol, physics, rendering, fluid, mob, survival, or
-> boss epics listed below.
+> **Implementation status: in progress.** The executable acceptance harness,
+> native secure-chat policy, several compatibility rewrites, centralized player
+> abilities, generated block shapes and physical properties, and initial real
+> movement/mining/placement acceptance are implemented. The ledger in
+> `acceptance/gap-ledger.json` is the authoritative per-requirement status. Fluid,
+> rendering, inventory, remaining compatibility, mob, survival, boss, and
+> hardening epics remain open until their exit gates pass.
 
 ## Scope and ordering
 
@@ -329,6 +330,13 @@ tables in `pomme-client/src/world/block/data`.
 This roadmap item remains open for the complete scripted walking/mining/placement
 matrix in the exit gate below and any still-distinct suffocation/view-blocking
 classification not represented by the generated shape and light tables.
+
+The public integrated-gameplay scenario now also drives normal `InputState`
+actions through the rendered client and in-process SteelMC server. Its retained
+trace proves bounded forward movement, an authoritative held block, the exact
+crosshair target changing from smooth stone to air after mining, and the same
+position returning to smooth stone after placement. The specialized partial-block
+matrix below is still required before this broader roadmap item closes.
 
 ### Exit gate
 
