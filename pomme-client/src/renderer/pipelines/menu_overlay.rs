@@ -1859,6 +1859,7 @@ pub enum SpriteId {
     ToastRightClick,
     JumpBarBackground,
     JumpBarProgress,
+    JumpBarCooldown,
     LocatorBarBackground,
     LocatorDotDefault0,
     LocatorDotDefault1,
@@ -2341,6 +2342,11 @@ fn build_sprite_atlas(
         (
             SpriteId::JumpBarProgress,
             "minecraft/textures/gui/sprites/hud/jump_bar_progress.png",
+            0.0,
+        ),
+        (
+            SpriteId::JumpBarCooldown,
+            "minecraft/textures/gui/sprites/hud/jump_bar_cooldown.png",
             0.0,
         ),
         (

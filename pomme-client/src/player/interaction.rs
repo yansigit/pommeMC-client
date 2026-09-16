@@ -546,7 +546,7 @@ impl InteractionState {
 
     /// Vanilla `Player.cannotAttackWithItem(stack, 0)` (the one call site
     /// passes no tolerance); the ratio is unclamped, unlike the scale.
-    fn cannot_attack_with_item(&self, held: Option<&ItemStackData>) -> bool {
+    pub fn cannot_attack_with_item(&self, held: Option<&ItemStackData>) -> bool {
         let required = held
             .and_then(stack_component::<MinimumAttackCharge>)
             .map_or(0.0, |c| c.value);

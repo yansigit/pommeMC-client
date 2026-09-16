@@ -2040,13 +2040,12 @@ pub fn update_game(
         // Vanilla `renderMaxAttackIndicator`: the picked entity is living
         // (implicit: pomme entity hits only come from `living`), alive, at
         // full charge, and the weapon is slow enough to matter (delay > 5).
-        // TODO: vanilla also skips it when the active item's ATTACK_RANGE
-        // component says the hit is out of range (spears).
         let held = game.player.inventory.held_stack(core.input.selected_slot());
         let delay = crate::player::interaction::attack_strength_delay(held);
         let scale = game.interaction.attack_strength_scale(delay);
         let show_full = scale >= 1.0
             && delay > 5.0
+            && !game.interaction.cannot_attack_with_item(held)
             && matches!(game.interaction.target, Some(HitResult::Entity(hit))
                 if game
                     .entity_store
@@ -2887,9 +2886,7 @@ pub fn update_game(
                     flap_speed: extras.flap_speed,
                     is_creepy: e.is_creepy,
                     is_converting: e.is_converting,
-                    // TODO: derive from the main-hand item (vanilla
-                    // `isHoldingItem`) once mob equipment tracking lands.
-                    is_holding_item: e.witch_drinking,
+                    is_holding_item: e.witch_drinking || e.main_hand_item.is_some(),
                     nose_wobble_speed: extras.nose_wobble_speed,
                     is_sitting: e.is_sitting,
                     is_sprinting: e.is_sprinting,
@@ -3947,5 +3944,23 @@ mod tests {
         assert!(has_red_overlay(1, 0));
         assert!(has_red_overlay(0, 1));
         assert!(!has_red_overlay(0, 0));
+    }
+
+    #[test]
+    fn holding_item_derived_from_equipment_or_witch_drinking() {
+        use azalea_registry::builtin::EntityKind;
+        use crate::entity::components::{LookDirection, Position};
+        let mut entity = crate::entity::LivingEntity::new(
+            EntityKind::Zombie,
+            Position::new(0.0, 0.0, 0.0),
+            LookDirection::new(0.0, 0.0),
+            0.0,
+            0.0,
+            None,
+        );
+        assert!(!(entity.witch_drinking || entity.main_hand_item.is_some()));
+
+        entity.main_hand_item = Some("iron_sword".to_string());
+        assert!(entity.witch_drinking || entity.main_hand_item.is_some());
     }
 }

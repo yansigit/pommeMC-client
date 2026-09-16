@@ -115,6 +115,10 @@ pub enum NetworkEvent {
         entity_id: i32,
         armor: Option<String>,
     },
+    EntityMainHandItem {
+        entity_id: i32,
+        item: Option<String>,
+    },
     Waypoint {
         operation: azalea_protocol::packets::game::c_waypoint::WaypointOperation,
         waypoint: azalea_protocol::packets::game::c_waypoint::TrackedWaypoint,

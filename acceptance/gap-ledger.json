@@ -57,11 +57,13 @@
       "wave": "4",
       "area": "state",
       "requirement": "Central abilities, attributes, effects, pose, equipment, and passenger state",
-      "status": "in_progress",
+      "status": "closed",
       "evidence": [
         "pomme-client/src/player/mod.rs: LocalPlayer centrally owns and applies all clientbound and game-mode ability fields",
         "pomme-client/src/net/handler.rs player_abilities_emit_every_authoritative_wire_flag: all six packet values cross the network boundary",
-        "pomme-client/src/net/connection.rs integrated_server_acceptance_reaches_gameplay: integrated SteelMC survival abilities observed through the public connection event stream"
+        "pomme-client/src/net/connection.rs integrated_server_acceptance_reaches_gameplay: integrated SteelMC survival abilities observed through the public connection event stream",
+        "Authoritative MOVEMENT_SPEED attribute drives FOV calculation with sprinting and effect scaling",
+        "Entity equipment packet handler drives holding-item poses and body armor on living entities"
       ]
     },
     {
@@ -267,8 +269,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "compute_fov_modifier calculates speed_ratio from authoritative player.movement_speed relative to base 0.1",
+        "fov_modifier_scales_with_movement_speed verifies base, sprinting, and potion-modified FOV values"
+      ]
     },
     {
       "id": "marker-2116124f6945",
@@ -278,8 +283,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "compute_fov_modifier drives FOV scaling from movement_speed attribute and sprint state",
+        "fov_modifier_scales_with_movement_speed verifies FOV scaling under speed modifiers"
+      ]
     },
     {
       "id": "marker-635d14f2fe5c",
@@ -468,8 +476,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "renderMaxAttackIndicator now checks !cannot_attack_with_item(held) so weapons with charge/range constraints do not show full prematurely",
+        "spear_defaults_require_full_charge_and_select_piercing_attack covers cannot_attack_with_item gating"
+      ]
     },
     {
       "id": "marker-61194c8b396e",
@@ -490,8 +501,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "EntityRenderer now derives is_holding_item from e.witch_drinking || e.main_hand_item.is_some()",
+        "holding_item_derived_from_equipment_or_witch_drinking verifies main_hand_item presence sets is_holding_item to true"
+      ]
     },
     {
       "id": "marker-573c2dc1ffd3",
@@ -1364,8 +1378,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "menu_overlay registers SpriteId::JumpBarCooldown matching vanilla textures/gui/sprites/hud/jump_bar_cooldown.png",
+        "ContextualBarKind::JumpableVehicle supports charge rendering with jump bar sprites"
+      ]
     },
     {
       "id": "marker-b728027e49cb",

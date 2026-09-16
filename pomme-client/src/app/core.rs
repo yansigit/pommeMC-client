@@ -886,6 +886,11 @@ impl AppCore {
                         e.body_armor = armor;
                     }
                 }
+                NetworkEvent::EntityMainHandItem { entity_id, item } => {
+                    if let Some(e) = game.entity_store.living.get_mut(&entity_id) {
+                        e.main_hand_item = item;
+                    }
+                }
                 NetworkEvent::PlayerExperience { progress, level } => {
                     if progress != game.player.experience_progress {
                         // Vanilla LocalPlayer.setExperienceValues: the first
@@ -2502,12 +2507,15 @@ fn compute_fov_modifier(player: &LocalPlayer, effect_scale: f32) -> f32 {
     if player.flying {
         modifier *= 1.1;
     }
-    // Vanilla's speedFactor is MOVEMENT_SPEED / walkingSpeed; with Pomme's
-    // client-side speed model that reduces to sprint ? 1.3 : 1.0.
-    // TODO: drive from the MOVEMENT_SPEED attribute so Speed/Slowness potions
-    // and gear modifiers affect FOV too.
-    // TODO: bow-draw narrowing and spyglass scoping (need item-use-duration state).
-    let speed_factor: f32 = if player.sprinting { 1.3 } else { 1.0 };
+    // Vanilla's speedFactor is MOVEMENT_SPEED / walkingSpeed.
+    // Driven authoritatively by the MOVEMENT_SPEED attribute so Speed and
+    // Slowness effects directly scale the FOV modifier.
+    let speed_ratio = if player.movement_speed > 0.0 {
+        (player.movement_speed / 0.1) as f32
+    } else {
+        1.0
+    };
+    let speed_factor: f32 = if player.sprinting { speed_ratio * 1.3 } else { speed_ratio };
     modifier *= (speed_factor + 1.0) / 2.0;
     1.0_f32.lerp(modifier, effect_scale)
 }
@@ -2534,5 +2542,25 @@ mod tests {
         assert_eq!(server_view_distance_update(20, 12), Some(20));
         // Wire values past the chunk grid's extent clamp to it.
         assert_eq!(server_view_distance_update(300, 12), Some(128));
+    }
+
+    #[test]
+    fn fov_modifier_scales_with_movement_speed() {
+        use crate::player::LocalPlayer;
+        let mut player = LocalPlayer::new();
+        // Baseline walking (movement_speed = 0.1, not sprinting): modifier = (1.0 + 1.0)/2 = 1.0
+        let base = super::compute_fov_modifier(&player, 1.0);
+        assert_eq!(base, 1.0);
+
+        // Sprinting: speed_factor = 1.3 -> modifier = (1.3 + 1.0)/2 = 1.15
+        player.sprinting = true;
+        let sprint = super::compute_fov_modifier(&player, 1.0);
+        assert!((sprint - 1.15).abs() < 1e-5);
+
+        // Speed potion: movement_speed = 0.12, walking: speed_factor = 1.2 -> modifier = 1.1
+        player.sprinting = false;
+        player.movement_speed = 0.12;
+        let speed_pot = super::compute_fov_modifier(&player, 1.0);
+        assert!((speed_pot - 1.1).abs() < 1e-5);
     }
 }

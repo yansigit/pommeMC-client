@@ -21,7 +21,6 @@ pub enum ContextualBarKind<'a> {
         arrow_frame_1: bool,
     },
     /// Ride-jump charge meter (vanilla `JumpableVehicleBar`).
-    // TODO: cooldown overlay when camel/nautilus dash mounts land.
     JumpableVehicle {
         charge: f32,
     },

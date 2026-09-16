@@ -725,6 +725,18 @@ pub fn handle_game_packet(
                         armor,
                     });
                 }
+                if *slot == azalea_inventory::components::EquipmentSlot::Mainhand {
+                    let main_hand = match item {
+                        azalea_inventory::ItemStack::Present(data) => {
+                            Some(crate::player::inventory::item_resource_name(data.kind))
+                        }
+                        azalea_inventory::ItemStack::Empty => None,
+                    };
+                    let _ = event_tx.try_send(NetworkEvent::EntityMainHandItem {
+                        entity_id: p.entity_id.0,
+                        item: main_hand,
+                    });
+                }
             }
         }
         ClientboundGamePacket::SetEntityData(p) => {

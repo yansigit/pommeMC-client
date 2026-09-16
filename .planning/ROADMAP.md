@@ -7,7 +7,7 @@ This roadmap closes all documented compatibility, gameplay, rendering, and serve
 ## Phases
 
 - [x] **Phase 1: Protocol Translation Closure (Wave 2)** - Complete all remaining legacy packet translations (763–774) and split translation modules.
-- [ ] **Phase 2: Authoritative State & Combat Parity (Wave 3)** - Centralize attribute-driven reach/speed and active item use overlays.
+- [x] **Phase 2: Authoritative State & Combat Parity (Wave 3)** - Centralize attribute-driven reach/speed and active item use overlays.
 - [ ] **Phase 3: Fluid & World Rendering Parity (Wave 4A)** - Implement per-corner water height averaging, flow vectors, and depth sorting.
 - [ ] **Phase 4: Entity Models, Layers & Presentation (Wave 4B)** - Add armor/saddle layers, sleeping pose, debug hitboxes, and living sound events.
 - [ ] **Phase 5: Containers & Inventory Semantics (Wave 5)** - Complete specialized container screens, bed chat, and creative inventory interaction.
