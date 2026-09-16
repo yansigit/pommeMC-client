@@ -551,7 +551,6 @@ impl LocalPlayer {
     /// Vanilla LocalPlayer.handlePortalTransitionEffect: the overlay ramps up
     /// over 80 ticks inside a portal and decays 4x as fast outside. Returns
     /// true when the rise starts from zero (vanilla plays PORTAL_TRIGGER).
-    /// TODO: vanilla also force-closes portal-disallowed screens while rising.
     pub fn tick_portal_effect(&mut self, inside_portal: bool) -> bool {
         self.prev_portal_effect_intensity = self.portal_effect_intensity;
         let mut step = 0.0;

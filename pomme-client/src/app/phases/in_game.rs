@@ -113,6 +113,27 @@ impl OpenContainer {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GameplayScreen {
+    Pause,
+    Options,
+    Inventory,
+    CreativeInventory,
+    Container,
+    BenchmarkResult,
+    ChunkLoadResult,
+    Death,
+    Chat,
+}
+
+impl GameplayScreen {
+    /// Vanilla `Screen.isAllowedInPortal`: ordinary screens close as the portal
+    /// transition rises, while chat and the death screen explicitly opt in.
+    fn is_allowed_in_portal(self) -> bool {
+        matches!(self, Self::Death | Self::Chat)
+    }
+}
+
 pub struct GameState {
     pub chunk_store: ChunkStore,
     /// Client-side light engine (vanilla `LevelLightEngine`); recreated with
@@ -536,6 +557,49 @@ impl GameState {
         self.cursor_item = azalea_inventory::ItemStack::Empty;
         self.inv_drag = None;
         self.inv_last_click = None;
+    }
+
+    /// Close every active screen that uses vanilla's default
+    /// `Screen.isAllowedInPortal == false`. Chat and death stay open; debug and
+    /// spectator widgets are overlays rather than screens.
+    fn close_portal_disallowed_screens(&mut self) -> bool {
+        let active = [
+            (self.paused, GameplayScreen::Pause),
+            (self.options_from_game, GameplayScreen::Options),
+            (self.inventory_open, GameplayScreen::Inventory),
+            (
+                self.creative_inventory_open,
+                GameplayScreen::CreativeInventory,
+            ),
+            (self.open_container.is_some(), GameplayScreen::Container),
+            (
+                self.benchmark_result.is_some(),
+                GameplayScreen::BenchmarkResult,
+            ),
+            (
+                self.chunk_load_result.is_some(),
+                GameplayScreen::ChunkLoadResult,
+            ),
+            (self.death_screen_open, GameplayScreen::Death),
+            (self.chat.is_open(), GameplayScreen::Chat),
+        ];
+        if !active
+            .into_iter()
+            .any(|(open, screen)| open && !screen.is_allowed_in_portal())
+        {
+            return false;
+        }
+
+        self.paused = false;
+        self.options_from_game = false;
+        self.pause_screen = PauseScreen::Main;
+        self.close_menu();
+        self.close_creative_inventory();
+        self.benchmark_result = None;
+        self.benchmark_upload = None;
+        self.chunk_load_result = None;
+        self.chunk_load_upload = None;
+        true
     }
 
     /// A focused text field (anvil rename, creative search) is capturing
@@ -1554,6 +1618,10 @@ pub fn update_game(
         // skipped once tickDeath removes the player at exactly death tick 20.
         let local_player_ai_step_ran = !game.dead || !game.player.death_animation_finished();
         let inside_portal = game.player.is_inside_nether_portal(&game.chunk_store);
+        if local_player_ai_step_ran && inside_portal && game.close_portal_disallowed_screens() {
+            core.menu.dismiss_in_game_options();
+            core.apply_cursor_grab(&gfx.window, Some(game));
+        }
         if local_player_ai_step_ran && game.player.tick_portal_effect(inside_portal) {
             // Vanilla forLocalAmbience: AMBIENT category at the listener,
             // volume 0.25, pitch 0.8..1.2.
@@ -3184,6 +3252,29 @@ fn get_entity_light(chunk_store: &ChunkStore, pos: Position) -> f32 {
         pos.y.floor() as i32,
         pos.z.floor() as i32,
     )
+}
+
+#[cfg(test)]
+mod portal_screen_tests {
+    use super::GameplayScreen;
+
+    #[test]
+    fn only_chat_and_death_screens_are_allowed_in_portals() {
+        for screen in [GameplayScreen::Death, GameplayScreen::Chat] {
+            assert!(screen.is_allowed_in_portal(), "{screen:?}");
+        }
+        for screen in [
+            GameplayScreen::Pause,
+            GameplayScreen::Options,
+            GameplayScreen::Inventory,
+            GameplayScreen::CreativeInventory,
+            GameplayScreen::Container,
+            GameplayScreen::BenchmarkResult,
+            GameplayScreen::ChunkLoadResult,
+        ] {
+            assert!(!screen.is_allowed_in_portal(), "{screen:?}");
+        }
+    }
 }
 
 /// Builds the rain/snow columns in a square around the camera (vanilla

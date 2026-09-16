@@ -880,8 +880,12 @@
       "occurrence": 0,
       "wave": "4",
       "area": "gameplay-state-and-physics",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "Portal entry now dismisses pause, options, inventory, creative inventory, container, and benchmark-result screens while preserving chat and death screens",
+        "The options hierarchy is reset to Main so a later disconnect cannot reveal a stale options screen",
+        "The shared portal policy test covers every gameplay screen class and the normal end-of-frame container transition sends ContainerClose"
+      ]
     },
     {
       "id": "marker-6606dd4974b7",

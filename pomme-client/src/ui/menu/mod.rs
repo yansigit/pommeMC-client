@@ -882,6 +882,16 @@ impl MainMenu {
         self.set_screen(Screen::Options);
     }
 
+    /// Leave the options hierarchy when an in-game event dismisses its screen
+    /// without going through the normal Back button (for example, entering a
+    /// nether portal). Resetting to Main also prevents a later disconnect from
+    /// revealing the stale options page on the title screen.
+    pub fn dismiss_in_game_options(&mut self) {
+        if self.is_options_screen() {
+            self.set_screen(Screen::Main);
+        }
+    }
+
     /// Open the friends screen and kick off a fetch (no-op without a token).
     fn open_friends(&mut self) {
         self.set_screen(Screen::Friends);
