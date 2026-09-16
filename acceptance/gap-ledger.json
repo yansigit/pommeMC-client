@@ -824,8 +824,11 @@
       "occurrence": 0,
       "wave": "4",
       "area": "gameplay-state-and-physics",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "Local-player entity flags now recover a missing use stack from the metadata-selected main or off hand",
+        "Server-started consumable use initializes the full duration once, preserves progress on repeated snapshots, and clears when the bit turns off"
+      ]
     },
     {
       "id": "marker-3f7c48b71cdc",

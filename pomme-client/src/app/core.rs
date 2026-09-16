@@ -1632,7 +1632,18 @@ impl AppCore {
                         && index == 8
                         && let crate::entity::MetaValue::Byte(flags) = value
                     {
-                        game.interaction.sync_using_item_flag(flags & 1 != 0);
+                        let used_stack = if flags & 2 != 0 {
+                            match game.player.inventory.offhand() {
+                                azalea_inventory::ItemStack::Present(stack) if stack.count > 0 => {
+                                    Some(stack)
+                                }
+                                _ => None,
+                            }
+                        } else {
+                            game.player.inventory.held_stack(self.input.selected_slot())
+                        };
+                        game.interaction
+                            .sync_using_item_flag(flags & 1 != 0, used_stack);
                     }
                     if index == 4
                         && let crate::entity::MetaValue::Bool(silent) = &value

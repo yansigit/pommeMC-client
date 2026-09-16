@@ -790,17 +790,8 @@ impl InteractionState {
             return true;
         }
 
-        let duration = (consumable.consume_seconds * 20.0) as i32;
-        let active = ActiveUse {
-            kind: stack.kind,
-            anim: consumable.animation,
-            sound: SoundRef::resolve(&consumable.sound),
-            has_particles: consumable.has_consume_particles,
-            texture: format!("item/{}", item_resource_name(stack.kind)),
-            use_effects: stack_component::<UseEffects>(stack).unwrap_or_default(),
-            duration,
-            remaining: duration,
-        };
+        let active = active_consumable(stack, consumable);
+        let duration = active.duration;
         if duration > 0 {
             self.using_item = Some(active);
         } else {
@@ -836,11 +827,13 @@ impl InteractionState {
     /// Client `LivingEntity.onSyncedDataUpdated(DATA_LIVING_ENTITY_FLAGS)`:
     /// when the server clears the using-item bit, discard the local use state
     /// immediately.
-    pub fn sync_using_item_flag(&mut self, is_using: bool) {
-        // TODO: vanilla also starts a use when the bit turns on with none
-        // active (a server-initiated use); pomme only starts uses from its own
-        // UseItem send.
-        if !is_using {
+    pub fn sync_using_item_flag(&mut self, is_using: bool, used_stack: Option<&ItemStackData>) {
+        if is_using && self.using_item.is_none() {
+            self.using_item = used_stack
+                .and_then(|stack| stack_component::<Consumable>(stack).map(|c| (stack, c)))
+                .map(|(stack, consumable)| active_consumable(stack, consumable))
+                .filter(|active| active.duration > 0);
+        } else if !is_using {
             self.using_item = None;
         }
     }
@@ -1429,6 +1422,20 @@ fn stack_component<T: DefaultableComponent + Clone>(stack: &ItemStackData) -> Op
         .or_else(|| get_default_component::<T>(stack.kind))
 }
 
+fn active_consumable(stack: &ItemStackData, consumable: Consumable) -> ActiveUse {
+    let duration = (consumable.consume_seconds * 20.0) as i32;
+    ActiveUse {
+        kind: stack.kind,
+        anim: consumable.animation,
+        sound: SoundRef::resolve(&consumable.sound),
+        has_particles: consumable.has_consume_particles,
+        texture: format!("item/{}", item_resource_name(stack.kind)),
+        use_effects: stack_component::<UseEffects>(stack).unwrap_or_default(),
+        duration,
+        remaining: duration,
+    }
+}
+
 /// Vanilla `Consumable.emitParticlesAndSounds`: the shared bite / final-gulp
 /// burst of item crumbs plus the consume sound. The sound plays locally here
 /// and again from the server's broadcast, doubling up for the eater exactly
@@ -1763,22 +1770,22 @@ mod tests {
     }
 
     #[test]
-    fn synced_using_item_flag_clears_server_stopped_use() {
+    fn synced_using_item_flag_starts_and_stops_server_use() {
         let mut state = InteractionState::new();
-        state.using_item = Some(ActiveUse {
-            kind: ItemKind::Apple,
-            anim: ItemUseAnimation::Eat,
-            sound: SoundRef::event("entity.generic.eat"),
-            has_particles: true,
-            texture: "item/apple".to_string(),
-            use_effects: UseEffects::default(),
-            duration: 32,
-            remaining: 12,
-        });
+        let apple = ItemStackData::new(ItemKind::Apple, 1);
 
-        state.sync_using_item_flag(true);
-        assert!(state.using_item.is_some());
-        state.sync_using_item_flag(false);
+        state.sync_using_item_flag(true, Some(&apple));
+        let active = state.using_item.as_ref().expect("server-started use");
+        assert_eq!(active.kind, ItemKind::Apple);
+        assert_eq!(active.remaining, active.duration);
+
+        // A repeated flags snapshot must not restart the countdown.
+        state.using_item.as_mut().unwrap().remaining -= 1;
+        let remaining = state.using_item.as_ref().unwrap().remaining;
+        state.sync_using_item_flag(true, None);
+        assert_eq!(state.using_item.as_ref().unwrap().remaining, remaining);
+
+        state.sync_using_item_flag(false, None);
         assert!(state.using_item.is_none());
     }
 
