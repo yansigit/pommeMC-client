@@ -3472,6 +3472,15 @@ fn translate_particles(
                 advance(cur, 4)?;
                 out.extend_from_slice(&cur.get_ref()[color_at..cur.position() as usize]);
             }
+            "block" | "block_marker" | "falling_dust" | "block_crumble" => {
+                copy_varint(cur, out)?;
+            }
+            "sculk_charge" => {
+                copy_bytes(cur, out, 4)?;
+            }
+            "shriek" => {
+                copy_varint(cur, out)?;
+            }
             n if PAYLOAD_PARTICLES.contains(&n) => {
                 tracing::debug!("Dropping a packet with an untranslatable {n} particle");
                 return None;

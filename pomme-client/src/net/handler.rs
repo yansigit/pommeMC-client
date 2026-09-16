@@ -1209,6 +1209,17 @@ fn variant_index(registry_holder: &RegistryHolder, kind: EntityKind, protocol_id
     {
         return i;
     }
+    if let Some(assets) = nbt.compound("assets")
+        && let Some(wild) = assets.string("wild").map(|s| s.to_str())
+        && let Some(suffix) = wild
+            .strip_prefix("minecraft:")
+            .unwrap_or(&wild)
+            .strip_prefix("entity/wolf/wolf_")
+            .or_else(|| wild.strip_prefix("entity/wolf/"))
+        && let Some(i) = order_pos(suffix)
+    {
+        return i;
+    }
     if let Some(model) = nbt.string("model").map(|s| s.to_str())
         && let Some(i) = order_pos(&model)
     {
@@ -1882,5 +1893,26 @@ mod tests {
         };
         assert!(saddle);
         assert_eq!(body.as_deref(), Some("iron_horse_armor"));
+    }
+
+    #[test]
+    fn wolf_variant_resolves_nested_assets_wild() {
+        let mut registries = RegistryHolder::default();
+        let mut wolf_entry = simdnbt::owned::NbtCompound::new();
+        let mut assets = simdnbt::owned::NbtCompound::new();
+        assets.insert("wild", simdnbt::owned::NbtTag::String("minecraft:entity/wolf/wolf_snowy".into()));
+        wolf_entry.insert("assets", simdnbt::owned::NbtTag::Compound(assets));
+
+        registries.append(
+            azalea_registry::identifier::Identifier::new("minecraft:wolf_variant"),
+            vec![(
+                azalea_registry::identifier::Identifier::new("minecraft:snowy"),
+                Some(wolf_entry),
+            )],
+        );
+
+        let idx = variant_index(&registries, EntityKind::Wolf, 0);
+        // "snowy" is index 2 in WOLF_VARIANT_ORDER: ["pale", "spotted", "snowy", ...]
+        assert_eq!(idx, 2);
     }
 }

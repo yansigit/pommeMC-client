@@ -223,19 +223,22 @@ impl RegistryRemaps {
                         // category prefix (generic.armor -> armor); match on
                         // the last dot segment for that registry only (sound
                         // names contain legitimate dots).
-                        //
-                        // TODO: stripping bridges one way only, so every
-                        // attribute remap through `from_latest` to a pre-1.21.2
-                        // version is None (26.2 `max_health` misses 1.20.6's
-                        // `generic.max_health`). Dormant while only Item and
-                        // DataComponentType go outbound. Re-adding a prefix
-                        // needs the target's own category, so the fix is a
-                        // name-keyed lookup rather than a transform.
                         if reg != ClientRegistry::Attribute {
                             return None;
                         }
                         let stripped = name.rsplit('.').next()?;
-                        (stripped != name).then(|| to_ids.get(stripped).copied())?
+                        if stripped != name {
+                            if let Some(id) = to_ids.get(stripped).copied() {
+                                return Some(id);
+                            }
+                        }
+                        to_ids.iter().find_map(|(to_name, &id)| {
+                            if to_name.rsplit('.').next() == Some(name) {
+                                Some(id)
+                            } else {
+                                None
+                            }
+                        })
                     })
                 })
                 .collect()
@@ -559,6 +562,8 @@ mod tests {
             Some("generic.max_health")
         );
         assert_eq!(r.remap(ClientRegistry::Attribute, max_health), Some(23));
+        let rev = RegistryRemaps::from_latest(from.version().protocol).unwrap();
+        assert_eq!(rev.remap(ClientRegistry::Attribute, 23), Some(max_health));
 
         assert_eq!(from.name_of(ClientRegistry::EntityType, 15), Some("cat"));
         assert_eq!(r.remap(ClientRegistry::EntityType, 15), Some(21));
