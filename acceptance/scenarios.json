@@ -1,0 +1,108 @@
+{
+  "schema": 1,
+  "scenarios": [
+    {
+      "id": "integrated-server-gameplay",
+      "description": "Boot SteelMC over the in-memory transport and reach a ticking saved world",
+      "protocol": "26.2 (776)",
+      "server_fixture": "steelmc-workspace",
+      "fixture_hash": "${GIT_HEAD}",
+      "account_mode": "offline-memory-transport",
+      "timeout_seconds": 180,
+      "command": "cargo",
+      "args": [
+        "test",
+        "-p",
+        "pomme-client",
+        "--all-features",
+        "integrated_server_acceptance_reaches_gameplay",
+        "--",
+        "--ignored",
+        "--nocapture"
+      ],
+      "env": {
+        "POMME_ACCEPTANCE_TRACE_FILE": "${RUN_DIR}/trace.json"
+      },
+      "expected_output": [
+        "POMME_ACCEPTANCE_TRACE=",
+        "test result: ok. 1 passed"
+      ],
+      "expected_files": [
+        {
+          "path": "${RUN_DIR}/trace.json",
+          "kind": "json",
+          "min_bytes": 100,
+          "retain_as": "trace.json"
+        }
+      ]
+    },
+    {
+      "id": "title-screen-render",
+      "description": "Initialize the real client renderer and capture the first title-screen frame",
+      "protocol": "26.2 (776)",
+      "server_fixture": "bundled-client-assets",
+      "fixture_hash": "${GIT_HEAD}",
+      "account_mode": "none",
+      "timeout_seconds": 180,
+      "command": "cargo",
+      "args": [
+        "run",
+        "-p",
+        "pomme-client",
+        "--",
+        "--game-dir",
+        "${TEMP_DIR}",
+        "--capture-first-frame",
+        "--exit-after-screenshot"
+      ],
+      "expected_output": [
+        "GPU:",
+        "Saved screenshot as"
+      ],
+      "expected_files": [
+        {
+          "path": "${TEMP_DIR}/screenshots/*.png",
+          "kind": "png",
+          "min_bytes": 1000,
+          "retain_as": "title-screen.png"
+        }
+      ]
+    },
+    {
+      "id": "integrated-gameplay-render",
+      "description": "Launch SteelMC in-process, join through the client, render gameplay, and shut down cleanly",
+      "protocol": "26.2 (776)",
+      "server_fixture": "steelmc-copper-golem-showcase",
+      "fixture_hash": "${GIT_HEAD}",
+      "account_mode": "offline-integrated",
+      "timeout_seconds": 240,
+      "command": "cargo",
+      "args": [
+        "run",
+        "-p",
+        "pomme-client",
+        "--",
+        "--game-dir",
+        "${TEMP_DIR}",
+        "--quick-access-singleplayer",
+        "--showcase-copper-golem-statues",
+        "--capture-gameplay-frame",
+        "--exit-after-screenshot"
+      ],
+      "expected_output": [
+        "Entering game state",
+        "Connected to server",
+        "Player position set",
+        "Saving world data"
+      ],
+      "expected_files": [
+        {
+          "path": "${TEMP_DIR}/screenshots/*.png",
+          "kind": "png",
+          "min_bytes": 1000,
+          "retain_as": "integrated-gameplay.png"
+        }
+      ]
+    }
+  ]
+}

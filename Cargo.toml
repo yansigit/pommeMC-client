@@ -8,7 +8,8 @@ members = [
     "pomme-protocol",
     "pomme-singleplayer",
     "tools/blockgen",
-    "tools/protogen"
+    "tools/protogen",
+    "tools/acceptance",
 ]
 # Steel is its own workspace; pomme-singleplayer reaches into it by path.
 exclude = ["third_party/SteelMC"]

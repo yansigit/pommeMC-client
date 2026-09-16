@@ -15,8 +15,13 @@
       "wave": "0",
       "area": "acceptance",
       "requirement": "Executable scenario manifests, bounded process orchestration, traces, and artifacts",
-      "status": "open",
-      "evidence": []
+      "status": "in_progress",
+      "evidence": [
+        "tools/acceptance/src/main.rs: bounded shell-free scenario orchestration, first-unmet-checkpoint diagnostics, logs, result JSON, and artifact validation",
+        "acceptance/scenarios.json: integrated protocol, title render, and integrated gameplay scenarios",
+        "cargo test -p pomme-acceptance: 3 runner tests passed",
+        "target/debug/pomme-acceptance: all three checked-in scenarios passed through public client and integrated-server paths"
+      ]
     },
     {
       "id": "native-776",

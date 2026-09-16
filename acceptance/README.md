@@ -34,7 +34,20 @@ public-path acceptance artifact to the entry's `evidence` list.
 
 ## Scenario manifests
 
-Wave 0 adds executable scenario manifests here. Each scenario records its
+`scenarios.json` is executed by the `pomme-acceptance` runner. Each scenario records its
 protocol, server fixture, account mode, bounded timeout, command, expected
 checkpoints, and retained artifacts. The acceptance runner writes one result
 record per scenario and never treats compilation alone as behavioral evidence.
+
+Build the runner before invoking it so its child `cargo` commands do not contend
+with the parent process for Cargo locks:
+
+```sh
+cargo build -p pomme-acceptance
+target/debug/pomme-acceptance
+```
+
+Use `--list` to inspect the matrix or repeat `--scenario <id>` to run a focused
+subset. Results, stdout, stderr, and validated retained artifacts are written to
+`target/acceptance/<run-id>/<scenario-id>`. Temporary game and world directories
+are deleted unless `--keep-temp` is supplied.

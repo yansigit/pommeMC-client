@@ -43,6 +43,11 @@ client-pre-pr:
     @cargo test -p pomme-client
     @cargo test -p pomme-singleplayer -- --include-ignored
 
+# Build first, then execute directly so child Cargo commands do not deadlock on locks.
+acceptance *args:
+    @cargo build -p pomme-acceptance
+    @target/debug/pomme-acceptance {{ args }}
+
 # Regenerate a version's packet-id table from the decompiled reference.
 protogen version="26.2":
     @cargo run -p protogen -- reference/{{ version }}/decompiled {{ version }} pomme-protocol/src/data/protocol-{{ version }}.json

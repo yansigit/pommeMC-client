@@ -5151,6 +5151,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pomme-acceptance"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "pomme-client"
 version = "0.1.0"
 dependencies = [

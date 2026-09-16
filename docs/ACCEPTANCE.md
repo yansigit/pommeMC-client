@@ -6,7 +6,19 @@ they exercise the public client connection path and a running server.
 
 ## Local deterministic gate
 
-Run the real integrated-server scenario with:
+Run the complete local deterministic matrix with:
+
+```sh
+cargo build -p pomme-acceptance
+target/debug/pomme-acceptance
+```
+
+This currently executes the integrated protocol flow, a real title-screen
+render, and an integrated-server gameplay render. Every scenario has a bounded
+timeout and retains its result record, logs, and validated JSON or PNG evidence
+under `target/acceptance/<run-id>`.
+
+Run only the lower-level integrated-server scenario with:
 
 ```sh
 cargo test -p pomme-client --all-features integrated_server_acceptance_reaches_gameplay -- --ignored --nocapture
