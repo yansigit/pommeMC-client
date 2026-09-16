@@ -1404,14 +1404,15 @@ fn is_non_occluding(block_name: &str) -> bool {
 fn determine_tint(block_name: &str) -> Tint {
     if block_name == "redstone_wire" {
         Tint::Redstone
+    } else if block_name == "spruce_leaves" {
+        Tint::Fixed([0x61, 0x99, 0x61])
+    } else if block_name == "birch_leaves" {
+        Tint::Fixed([0x80, 0xA7, 0x55])
     } else if GRASS_TINTED.contains(&block_name) {
         Tint::Grass
     } else if DRY_FOLIAGE_TINTED.contains(&block_name) {
         Tint::DryFoliage
     } else if FOLIAGE_TINTED.contains(&block_name) || block_name.ends_with("_leaves") {
-        // TODO: spruce_leaves and birch_leaves use fixed constant colors in
-        // vanilla (BlockColors), not biome foliage; the `_leaves` suffix rule
-        // mistints them.
         Tint::Foliage
     } else {
         Tint::None
@@ -1421,6 +1422,19 @@ fn determine_tint(block_name: &str) -> Tint {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn birch_and_spruce_leaves_use_vanilla_fixed_tints() {
+        assert_eq!(
+            determine_tint("spruce_leaves"),
+            Tint::Fixed([0x61, 0x99, 0x61])
+        );
+        assert_eq!(
+            determine_tint("birch_leaves"),
+            Tint::Fixed([0x80, 0xA7, 0x55])
+        );
+        assert_eq!(determine_tint("oak_leaves"), Tint::Foliage);
+    }
 
     const DIRS: [Direction; 6] = [
         Direction::Down,

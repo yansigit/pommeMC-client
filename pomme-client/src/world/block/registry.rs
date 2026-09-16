@@ -4,7 +4,7 @@ use std::path::Path;
 use azalea_block::BlockState;
 use serde::{Deserialize, Serialize};
 
-pub const BLOCK_CACHE_FILE: &str = "block_cache_v3.json";
+pub const BLOCK_CACHE_FILE: &str = "block_cache_v4.json";
 
 use super::model;
 use super::model::BakedModel;
@@ -16,6 +16,8 @@ pub enum Tint {
     Grass,
     Foliage,
     DryFoliage,
+    /// Vanilla `BlockColors` fixed RGB tint, independent of biome climate.
+    Fixed([u8; 3]),
     /// Power-level color, resolved at mesh time from the state's `power`.
     Redstone,
 }

@@ -426,10 +426,15 @@ fn build_item_mesh(model: &BakedModel, uv_map: &AtlasUVMap) -> Vec<ChunkVertex> 
         let region = uv_map.get_region(&quad.texture);
         let u_span = region.u_max - region.u_min;
         let v_span = region.v_max - region.v_min;
-        let tint = if matches!(quad.tint, crate::world::block::registry::Tint::None) {
-            crate::renderer::chunk::mesher::PACKED_WHITE_SHIFTED
-        } else {
-            crate::renderer::chunk::mesher::pack_tint_shifted([0.569, 0.741, 0.349])
+        use crate::world::block::registry::Tint;
+        let tint = match quad.tint {
+            Tint::None => crate::renderer::chunk::mesher::PACKED_WHITE_SHIFTED,
+            Tint::Fixed([r, g, b]) => crate::renderer::chunk::mesher::pack_tint_shifted([
+                r as f32 / 255.0,
+                g as f32 / 255.0,
+                b as f32 / 255.0,
+            ]),
+            _ => crate::renderer::chunk::mesher::pack_tint_shifted([0.569, 0.741, 0.349]),
         };
 
         for i in [0, 1, 2, 2, 3, 0] {

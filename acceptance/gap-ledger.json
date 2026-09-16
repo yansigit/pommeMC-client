@@ -1559,8 +1559,11 @@
       "occurrence": 0,
       "wave": "4",
       "area": "gameplay-state-and-physics",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "Birch leaves use vanilla fixed color #80A755 and spruce leaves use #619961",
+        "Fixed tints propagate through chunk meshing, item meshes, and terrain particles instead of biome blending"
+      ]
     },
     {
       "id": "marker-e2c7faf4ef22",

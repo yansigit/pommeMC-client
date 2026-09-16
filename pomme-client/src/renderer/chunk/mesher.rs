@@ -275,6 +275,9 @@ fn tint_color(
         Tint::Grass => pack_tint_shifted(grass),
         Tint::Foliage => pack_tint_shifted(foliage),
         Tint::DryFoliage => pack_tint_shifted(dry_foliage),
+        Tint::Fixed([r, g, b]) => {
+            pack_tint_shifted([r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0])
+        }
         Tint::Redstone => pack_tint_shifted(redstone()),
     }
 }
