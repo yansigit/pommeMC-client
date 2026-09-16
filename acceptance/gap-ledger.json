@@ -768,8 +768,11 @@
       "occurrence": 0,
       "wave": "4",
       "area": "gameplay-state-and-physics",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "Spectator ticks route through direct camera movement and never call block collision resolution",
+        "A collision-backed movement test places a solid block above the player and verifies spectator ascent passes through it"
+      ]
     },
     {
       "id": "marker-6f91a9aa4518",

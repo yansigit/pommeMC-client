@@ -228,7 +228,8 @@ fn look_sin_cos(player: &LocalPlayer) -> (f64, f64) {
 fn update_fly_state(player: &mut LocalPlayer, input: &InputState, sin_y_rot: f64, cos_y_rot: f64) {
     if player.may_fly {
         if crate::player::is_spectator(player.game_mode) {
-            // Spectator flight is forced on. TODO: spectator noclip
+            // Spectator flight is forced on. `tick` routes spectator travel
+            // through `tick_spectator`, which moves directly without collision.
             if !player.flying {
                 player.flying = true;
                 player.abilities_dirty = true;
@@ -808,11 +809,32 @@ mod tests {
 
     #[test]
     fn spectator_travel_ignores_collision_and_moves_along_look_vector() {
+        use azalea_core::position::ChunkPos;
+        use azalea_world::Chunk;
+
+        crate::world::block::init("26.2");
         let mut player = LocalPlayer::new();
-        player.game_mode = 3;
-        player.fly_speed = 0.05;
-        spectator_move(&mut player, 1.0, 0.0, 0.0);
-        assert!(player.position.z > 0.04);
+        player.game_mode = crate::player::GAME_MODE_SPECTATOR;
+        player.apply_game_mode_abilities(crate::player::GAME_MODE_SPECTATOR);
+        player.fly_speed = 1.0;
+        player.position = dvec3(0.5, 0.0, 0.5).into();
+
+        let mut chunks = ChunkStore::new(2);
+        let chunk_pos = ChunkPos::new(0, 0);
+        chunks.partial_storage.set(
+            &chunk_pos,
+            Some(Chunk::default()),
+            &mut chunks.chunk_storage,
+        );
+        let stone = crate::world::block::first_state_of("stone").expect("stone state");
+        chunks.set_block_state(0, 2, 0, stone);
+
+        let mut input = InputState::released();
+        input.inject_action_press(input::Action::Jump);
+        tick(&mut player, &input, &chunks, 1.0, false);
+
+        assert_eq!(player.position.y, 1.0);
+        assert!(player.flying);
         assert!(!player.on_ground);
         assert!(!player.horizontal_collision);
     }
