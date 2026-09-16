@@ -823,8 +823,11 @@
       "occurrence": 0,
       "wave": "4",
       "area": "gameplay-state-and-physics",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "Shared GAME_MODE_* constants now define wire values and back is_survival/is_creative/is_spectator",
+        "Gameplay, movement, HUD, tab-list, input, and spectator-menu branches use the shared semantic helpers rather than raw numeric comparisons"
+      ]
     },
     {
       "id": "marker-32786c693bf2",

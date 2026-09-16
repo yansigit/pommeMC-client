@@ -116,7 +116,10 @@ impl TabList {
             // `comparingInt(p -> -p.getTabListOrder())`: higher order first.
             b.list_order
                 .cmp(&a.list_order)
-                .then_with(|| (a.game_mode == 3).cmp(&(b.game_mode == 3)))
+                .then_with(|| {
+                    crate::player::is_spectator(a.game_mode)
+                        .cmp(&crate::player::is_spectator(b.game_mode))
+                })
                 .then_with(|| {
                     scoreboard
                         .team_name(&a.name)

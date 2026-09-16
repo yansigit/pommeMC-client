@@ -1329,11 +1329,11 @@ impl AppCore {
                     game.player.apply_game_mode_abilities(game_mode);
                     if game.inventory_open || game.creative_inventory_open {
                         match game_mode {
-                            1 => {
+                            crate::player::GAME_MODE_CREATIVE => {
                                 game.inventory_open = false;
                                 game.creative_inventory_open = true;
                             }
-                            3 => {
+                            crate::player::GAME_MODE_SPECTATOR => {
                                 game.inventory_open = false;
                                 game.close_creative_inventory();
                                 self.apply_cursor_grab(window, Some(game));
@@ -2064,7 +2064,7 @@ impl AppCore {
         // Vanilla Minecraft.handleKeybinds: drop and offhand-swap consume the
         // queued key presses each tick; spectators consume without acting.
         if input_live {
-            let spectator = game.player.game_mode == 3;
+            let spectator = crate::player::is_spectator(game.player.game_mode);
             while self.input.consume_click(Action::DropItem) {
                 let whole_stack = self.input.ctrl_held();
                 if !spectator {

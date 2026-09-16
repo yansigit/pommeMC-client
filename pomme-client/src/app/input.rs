@@ -200,7 +200,7 @@ impl InputState {
                     } else if !game.paused
                         && !game.dead
                         && !game.death_screen_open
-                        && game.player.game_mode != 3
+                        && !crate::player::is_spectator(game.player.game_mode)
                         && !game.chat.is_open()
                         && game.game_mode_switcher.is_none()
                     {

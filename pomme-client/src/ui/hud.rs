@@ -502,7 +502,7 @@ pub fn build_hud(
     // Vanilla also shows the crosshair in spectator when looking at a menu
     // provider, and hides it for the F3 3D-crosshair entry; neither concept
     // exists here yet.
-    if first_person && game_mode != 3 {
+    if first_person && !crate::player::is_spectator(game_mode) {
         build_crosshair(elements, cx, cy, gs, attack);
     }
 
@@ -518,7 +518,7 @@ pub fn build_hud(
 
     // Vanilla `Hud.extractHotbarAndDecorations`: spectators get the spectator
     // command bar (pushed by the caller) instead of the item hotbar.
-    if game_mode != 3 {
+    if !crate::player::is_spectator(game_mode) {
         elements.push(MenuElement::Image {
             x: hotbar_x,
             y: hotbar_y,
@@ -566,7 +566,10 @@ pub fn build_hud(
     // sprite). Spectators get the SpectatorGui hotbar instead
     // (`extractHotbarAndDecorations`). TODO: `skin_main_hand_right` isn't
     // sent in ClientInformation yet (hardcoded Right in net/connection.rs).
-    if game_mode != 3 && attack.mode == AttackIndicatorMode::Hotbar && attack.scale < 1.0 {
+    if !crate::player::is_spectator(game_mode)
+        && attack.mode == AttackIndicatorMode::Hotbar
+        && attack.scale < 1.0
+    {
         let y = (screen_h - 20.0 * gs).round();
         let x = if attack.main_hand_right {
             (cx + (91.0 + 6.0) * gs).round()
@@ -607,7 +610,7 @@ pub fn build_hud(
     // custom names, alpha `timer * 256 / 10` (10-tick fade), y = height - 59
     // (+14 when the player can't be hurt). Spectators get none.
     if tool_highlight_timer > 0
-        && game_mode != 3
+        && !crate::player::is_spectator(game_mode)
         && let Some(ItemStack::Present(data)) = hotbar.get(selected_slot as usize)
     {
         use azalea_inventory::components::{CustomName, Rarity};
@@ -628,7 +631,7 @@ pub fn build_hud(
             span.italic |= italic;
         }
         let mut y = screen_h - 59.0 * gs;
-        if game_mode == 1 {
+        if crate::player::is_creative(game_mode) {
             y += 14.0 * gs;
         }
         elements.push(MenuElement::McText {

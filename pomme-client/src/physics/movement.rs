@@ -156,7 +156,7 @@ pub fn tick(
     player.tick_air_supply();
 
     // Touching down cancels flight, even in creative.
-    if player.on_ground && player.flying && player.game_mode != 3 {
+    if player.on_ground && player.flying && !crate::player::is_spectator(player.game_mode) {
         player.flying = false;
         player.abilities_dirty = true;
     }
@@ -197,7 +197,7 @@ pub fn tick_dead(player: &mut LocalPlayer, chunk_store: &ChunkStore) {
     // the player in the crouching pose for the following tick.
     update_crouch_state(player, &neutral, chunk_store);
 
-    if player.on_ground && player.flying && player.game_mode != 3 {
+    if player.on_ground && player.flying && !crate::player::is_spectator(player.game_mode) {
         player.flying = false;
         player.abilities_dirty = true;
     }
@@ -227,7 +227,7 @@ fn look_sin_cos(player: &LocalPlayer) -> (f64, f64) {
 // a second one inside it toggles flight.
 fn update_fly_state(player: &mut LocalPlayer, input: &InputState, sin_y_rot: f64, cos_y_rot: f64) {
     if player.may_fly {
-        if player.game_mode == 3 {
+        if crate::player::is_spectator(player.game_mode) {
             // Spectator flight is forced on. TODO: spectator noclip
             if !player.flying {
                 player.flying = true;
@@ -523,7 +523,7 @@ fn update_sprint_state(
 // Forces the crouch pose under ceilings too low to stand in; riding and
 // sleeping aren't simulated.
 fn update_crouch_state(player: &mut LocalPlayer, input: &InputState, chunk_store: &ChunkStore) {
-    player.crouching = player.game_mode != 3
+    player.crouching = !crate::player::is_spectator(player.game_mode)
         && !player.flying
         && !player.swimming
         && can_fit_with_height(chunk_store, player.position.into(), CROUCH_HEIGHT)

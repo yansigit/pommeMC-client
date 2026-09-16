@@ -686,7 +686,7 @@ impl GameState {
             KeyCode::KeyN => {
                 // Sent unconditionally; the server refuses without permission.
                 use azalea_core::game_type::GameMode;
-                let target = if self.player.game_mode != 3 {
+                let target = if !crate::player::is_spectator(self.player.game_mode) {
                     GameMode::Spectator
                 } else {
                     self.previous_game_mode

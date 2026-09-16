@@ -105,7 +105,9 @@ impl Item {
             } => tab_list
                 .players
                 .get(uuid)
-                .map_or(*snapshot_game_mode != 3, |p| p.game_mode != 3),
+                .map_or(!crate::player::is_spectator(*snapshot_game_mode), |p| {
+                    !crate::player::is_spectator(p.game_mode)
+                }),
             Item::Team { .. } => true,
         }
     }
@@ -113,7 +115,10 @@ impl Item {
 
 /// Vanilla `TeleportToPlayerMenuCategory`: drop spectators, sort by UUID.
 fn player_items(players: Vec<&TabListPlayer>) -> Vec<Item> {
-    let mut players: Vec<_> = players.into_iter().filter(|p| p.game_mode != 3).collect();
+    let mut players: Vec<_> = players
+        .into_iter()
+        .filter(|p| !crate::player::is_spectator(p.game_mode))
+        .collect();
     players.sort_by_key(|p| p.uuid);
     players
         .into_iter()
@@ -135,7 +140,7 @@ fn team_items(tab_list: &TabList, scoreboard: &Scoreboard) -> Vec<Item> {
             .members
             .iter()
             .filter_map(|member| tab_list.players.values().find(|p| &p.name == member))
-            .filter(|p| p.game_mode != 3)
+            .filter(|p| !crate::player::is_spectator(p.game_mode))
             .collect();
         if members.is_empty() {
             continue;

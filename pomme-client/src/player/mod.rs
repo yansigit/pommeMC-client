@@ -19,21 +19,24 @@ const DROWN_DAMAGE_THRESHOLD: i32 = -20;
 const DROWN_DAMAGE: f32 = 2.0;
 const AIR_RECOVERY_RATE: i32 = 4;
 
-// TODO: migrate the remaining raw `game_mode == N` checks to shared constants
-// or an enum.
+pub const GAME_MODE_SURVIVAL: u8 = 0;
+pub const GAME_MODE_CREATIVE: u8 = 1;
+pub const GAME_MODE_ADVENTURE: u8 = 2;
+pub const GAME_MODE_SPECTATOR: u8 = 3;
+
 /// Matches vanilla GameType.isSurvival(): Survival (0) or Adventure (2).
 pub fn is_survival(game_mode: u8) -> bool {
-    game_mode == 0 || game_mode == 2
+    matches!(game_mode, GAME_MODE_SURVIVAL | GAME_MODE_ADVENTURE)
 }
 
 /// Matches vanilla GameType.isCreative(): Creative (1).
 pub fn is_creative(game_mode: u8) -> bool {
-    game_mode == 1
+    game_mode == GAME_MODE_CREATIVE
 }
 
 /// Spectator (3).
 pub fn is_spectator(game_mode: u8) -> bool {
-    game_mode == 3
+    game_mode == GAME_MODE_SPECTATOR
 }
 
 fn is_water_block(state: azalea_block::BlockState) -> bool {
@@ -171,7 +174,7 @@ impl LocalPlayer {
             prev_portal_effect_intensity: 0.0,
             sleeping_pos: None,
             sleep_counter: 0,
-            game_mode: 0,
+            game_mode: GAME_MODE_SURVIVAL,
             score: 0,
             entity_id: -1,
             experience_level: 0,
@@ -184,21 +187,21 @@ impl LocalPlayer {
     /// first four fields afterwards, while `may_build` remains game-mode-owned.
     pub fn apply_game_mode_abilities(&mut self, game_mode: u8) {
         match game_mode {
-            1 => {
+            GAME_MODE_CREATIVE => {
                 self.invulnerable = true;
                 self.may_fly = true;
                 self.instabuild = true;
                 self.may_build = true;
                 // Creative preserves the current flying toggle.
             }
-            3 => {
+            GAME_MODE_SPECTATOR => {
                 self.invulnerable = true;
                 self.flying = true;
                 self.may_fly = true;
                 self.instabuild = false;
                 self.may_build = false;
             }
-            2 => {
+            GAME_MODE_ADVENTURE => {
                 self.invulnerable = false;
                 self.flying = false;
                 self.may_fly = false;
