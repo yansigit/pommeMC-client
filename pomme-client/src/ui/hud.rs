@@ -161,14 +161,17 @@ impl Scoreboard {
         }
     }
 
+    #[allow(dead_code)]
     pub fn list_objective(&self) -> Option<&str> {
         self.list.as_deref()
     }
 
+    #[allow(dead_code)]
     pub fn below_name_objective(&self) -> Option<&str> {
         self.below_name.as_deref()
     }
 
+    #[allow(dead_code)]
     pub fn team_sidebar_objective(&self, color: u8) -> Option<&str> {
         self.team_sidebars.get(&color).map(|s| s.as_str())
     }

@@ -140,14 +140,17 @@ impl BossBarState {
         self.bars.iter().map(|(_, b)| b)
     }
 
+    #[allow(dead_code)]
     pub fn any_darken_screen(&self) -> bool {
         self.bars.iter().any(|(_, b)| b.darken_screen)
     }
 
+    #[allow(dead_code)]
     pub fn any_play_music(&self) -> bool {
         self.bars.iter().any(|(_, b)| b.play_music)
     }
 
+    #[allow(dead_code)]
     pub fn any_create_world_fog(&self) -> bool {
         self.bars.iter().any(|(_, b)| b.create_world_fog)
     }
