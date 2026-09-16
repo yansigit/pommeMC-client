@@ -260,15 +260,15 @@ impl ApplicationHandler for App {
                 self.core.apply_cursor_grab(&window, None);
 
                 if let Some(server_ip) = quick_access_multiplayer {
-                    self.core.remember_remote_target(server_ip.clone(), None);
+                    let protocol = self.core.menu.saved_server_protocol(&server_ip);
+                    self.core
+                        .remember_remote_target(server_ip.clone(), protocol);
                     let connection = spawn_connection(
                         &self.core.tokio_rt,
                         ConnectArgs {
-                            // TODO: read the saved server list's protocol for
-                            // this address to skip the join-time probe.
                             transport: Transport::Remote {
                                 server: server_ip,
-                                protocol: None,
+                                protocol,
                             },
                             username: self.core.user.username.clone(),
                             uuid: self.core.user.uuid,

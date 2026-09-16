@@ -765,6 +765,17 @@ impl MainMenu {
         }
     }
 
+    /// Protocol captured by the saved server's last successful ping. Launcher
+    /// quick-access joins can use it before the multiplayer screen has had a
+    /// chance to ping, avoiding a duplicate status connection.
+    pub fn saved_server_protocol(&self, address: &str) -> Option<i32> {
+        self.server_list
+            .servers
+            .iter()
+            .find(|server| server.address.eq_ignore_ascii_case(address))
+            .and_then(|server| server.protocol)
+    }
+
     fn set_screen(&mut self, screen: Screen) {
         self.screen = screen;
         self.focused_field = None;
@@ -1243,6 +1254,26 @@ mod tests {
             }
             _ => panic!("expected retry to dispatch a reconnect action"),
         }
+        let _ = std::fs::remove_dir_all(game_dir);
+    }
+
+    #[test]
+    fn quick_access_reuses_saved_server_protocol() {
+        let game_dir = std::env::temp_dir().join(format!(
+            "pomme-quick-access-protocol-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&game_dir).unwrap();
+        std::fs::write(
+            game_dir.join("servers.json"),
+            r#"[{"name":"Test","address":"Example.Test:25565","protocol":767}]"#,
+        )
+        .unwrap();
+        let runtime = Arc::new(tokio::runtime::Runtime::new().unwrap());
+        let menu = MainMenu::new(&game_dir, runtime, "Player".into(), "26.2".into(), None);
+
+        assert_eq!(menu.saved_server_protocol("example.test:25565"), Some(767));
+        assert_eq!(menu.saved_server_protocol("other.test:25565"), None);
         let _ = std::fs::remove_dir_all(game_dir);
     }
 }

@@ -297,8 +297,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "App setup now resolves quick-access addresses through MainMenu::saved_server_protocol before spawning the connection",
+        "quick_access_reuses_saved_server_protocol verifies persisted protocol lookup, case-insensitive address matching, and unknown-address fallback"
+      ]
     },
     {
       "id": "marker-8bea3019bf5c",
