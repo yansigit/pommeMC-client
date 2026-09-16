@@ -1522,10 +1522,6 @@ impl ChunkBufferStore {
     /// `CameraUniform` was built with: the push-constant origins are rebased
     /// against it and the shader adds back `camera_pos` (the eye's offset
     /// from that anchor).
-    ///
-    /// TODO: water isn't depth-sorted, so overlapping translucent surfaces
-    /// (oceans at grazing angles, water seen through water) can blend out of
-    /// order.
     pub fn draw_water(
         &self,
         cmd: vk::CommandBuffer,
@@ -1542,6 +1538,7 @@ impl ChunkBufferStore {
         cmd.bind_index_buffer(self.index_buffer, 0, vk::IndexType::Uint32);
 
         let now = std::time::Instant::now();
+        let mut sections_to_draw: Vec<(&SectionAlloc, bool, f64)> = Vec::new();
         for (pos, alloc) in self.chunks.iter() {
             let col_vis = self.chunk_visibility.get(pos).copied().unwrap_or(u32::MAX);
             let nearby = self.column_nearby(*pos, eye);
@@ -1552,23 +1549,31 @@ impl ChunkBufferStore {
                 {
                     continue;
                 }
-                let vis = Self::section_visibility(nearby, sec, now);
-                let rel = (origin_dvec(sec.origin) - anchor).as_vec3();
-                let origin_fade = [rel.x, rel.y, rel.z, vis];
-                cmd.push_constants(
-                    layout,
-                    vk::ShaderStageFlags::Vertex,
-                    0,
-                    bytemuck::bytes_of(&origin_fade),
-                );
-                cmd.draw_indexed(
-                    sec.water_index_count,
-                    1,
-                    sec.water_first_index,
-                    sec.vertex_offset,
-                    0,
-                );
+                let center = origin_dvec(sec.origin) + glam::dvec3(8.0, 8.0, 8.0);
+                let dist_sq = eye.distance_squared(center);
+                sections_to_draw.push((sec, nearby, dist_sq));
             }
+        }
+        // Depth-sort back to front (farthest first) for proper translucent blending.
+        sections_to_draw.sort_unstable_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+
+        for (sec, nearby, _) in sections_to_draw {
+            let vis = Self::section_visibility(nearby, sec, now);
+            let rel = (origin_dvec(sec.origin) - anchor).as_vec3();
+            let origin_fade = [rel.x, rel.y, rel.z, vis];
+            cmd.push_constants(
+                layout,
+                vk::ShaderStageFlags::Vertex,
+                0,
+                bytemuck::bytes_of(&origin_fade),
+            );
+            cmd.draw_indexed(
+                sec.water_index_count,
+                1,
+                sec.water_first_index,
+                sec.vertex_offset,
+                0,
+            );
         }
     }
 

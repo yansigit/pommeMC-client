@@ -244,6 +244,7 @@ pub struct BiomeClimate {
     pub grass_color_modifier: GrassColorModifier,
     pub foliage_color_override: Option<[f32; 3]>,
     pub dry_foliage_color_override: Option<[f32; 3]>,
+    pub water_color: Option<[f32; 3]>,
 }
 
 impl Default for BiomeClimate {
@@ -255,6 +256,7 @@ impl Default for BiomeClimate {
             grass_color_modifier: GrassColorModifier::None,
             foliage_color_override: None,
             dry_foliage_color_override: None,
+            water_color: None,
         }
     }
 }
@@ -1180,6 +1182,16 @@ impl ChunkStoreSnapshot {
         blend_color(x, z, |bx, bz| self.dry_foliage_color_at(bx, y, bz))
     }
 
+    fn water_tint(&self, x: i32, y: i32, z: i32) -> [f32; 3] {
+        blend_color(x, z, |bx, bz| self.water_color_at(bx, y, bz))
+    }
+
+    fn water_color_at(&self, x: i32, y: i32, z: i32) -> [f32; 3] {
+        self.climate_at(x, y, z)
+            .water_color
+            .unwrap_or([0.247, 0.463, 0.894])
+    }
+
     fn get_light(&self, x: i32, y: i32, z: i32) -> f32 {
         let cx = x.div_euclid(16);
         let cz = z.div_euclid(16);
@@ -1727,6 +1739,7 @@ fn emit_cube_faces(
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum BlockKind {
     Air,
     Water,
@@ -1750,11 +1763,6 @@ fn classify_block(state: azalea_block::BlockState) -> BlockKind {
     }
 }
 
-// TODO: biome-based water color
-// TODO: per-corner height averaging for smooth water surfaces
-// TODO: flowing water texture (water_flow) with direction-based rotation
-// TODO: per-level height for flowing water (level / 9.0 per corner)
-
 const FLUID_MAX_HEIGHT: f32 = 8.0 / 9.0;
 
 #[allow(clippy::too_many_arguments)]
@@ -1769,10 +1777,14 @@ fn block_face_tex_tint(
     bz: i32,
 ) -> (AtlasRegion, u32) {
     match classify_block(state) {
-        BlockKind::Water => (
-            uv_map.get_region("water_still"),
-            pack_tint_shifted([0.247, 0.463, 0.894]),
-        ),
+        BlockKind::Water => {
+            let f = crate::world::block::fluid(state);
+            let tex = if f.amount < 8 { "water_flow" } else { "water_still" };
+            (
+                uv_map.get_region(tex),
+                pack_tint_shifted(snapshot.water_tint(bx, by, bz)),
+            )
+        }
         BlockKind::Lava => (uv_map.get_region("lava_still"), PACKED_WHITE_SHIFTED),
         _ => {
             if let Some(textures) = registry.get_textures(state) {
@@ -1796,6 +1808,41 @@ fn block_face_tex_tint(
                 (uv_map.get_region(""), MISSING_TINT)
             }
         }
+    }
+}
+
+fn fluid_corner_height(
+    snapshot: &ChunkStoreSnapshot,
+    bx: i32,
+    by: i32,
+    bz: i32,
+    dx: i32,
+    dz: i32,
+    kind: BlockKind,
+) -> f32 {
+    let mut sum = 0.0;
+    let mut count = 0;
+    for (ox, oz) in [(0, 0), (dx, 0), (0, dz), (dx, dz)] {
+        let state = snapshot.get_block_state(bx + ox, by, bz + oz);
+        if classify_block(state) == kind {
+            let above = snapshot.get_block_state(bx + ox, by + 1, bz + oz);
+            if classify_block(above) == kind {
+                return 1.0;
+            }
+            let f = crate::world::block::fluid(state);
+            let h = if f.falling {
+                1.0
+            } else {
+                (f.amount.max(1) as f32) / 9.0
+            };
+            sum += h;
+            count += 1;
+        }
+    }
+    if count > 0 {
+        sum / count as f32
+    } else {
+        FLUID_MAX_HEIGHT
     }
 }
 
@@ -1828,6 +1875,11 @@ fn emit_fluid(
         solid
     };
 
+    let h_nw = fluid_corner_height(snapshot, bx, by, bz, -1, -1, kind);
+    let h_sw = fluid_corner_height(snapshot, bx, by, bz, -1, 1, kind);
+    let h_se = fluid_corner_height(snapshot, bx, by, bz, 1, 1, kind);
+    let h_ne = fluid_corner_height(snapshot, bx, by, bz, 1, -1, kind);
+
     for dir in &CUBE_FACE_DIRS {
         let offset = dir.offset();
         let neighbor = snapshot.get_block_state(bx + offset[0], by + offset[1], bz + offset[2]);
@@ -1841,11 +1893,10 @@ fn emit_fluid(
         let (mut positions, uvs, light) = cube_face_geometry(*dir);
 
         if matches!(dir, Direction::Up) {
-            // A water/lava block above would have culled this face already, so
-            // the surface always sits at the lowered fluid height.
-            for p in &mut positions {
-                p[1] = FLUID_MAX_HEIGHT;
-            }
+            positions[0][1] = h_nw;
+            positions[1][1] = h_sw;
+            positions[2][1] = h_se;
+            positions[3][1] = h_ne;
 
             emit_face_into(
                 vertices, indices, block_pos, &positions, &uvs, [light; 4], region, tint,
@@ -1866,6 +1917,25 @@ fn emit_fluid(
                 tint,
             );
             continue;
+        }
+        match dir {
+            Direction::North => {
+                positions[0][1] = h_ne;
+                positions[3][1] = h_nw;
+            }
+            Direction::South => {
+                positions[0][1] = h_sw;
+                positions[3][1] = h_se;
+            }
+            Direction::West => {
+                positions[0][1] = h_nw;
+                positions[3][1] = h_sw;
+            }
+            Direction::East => {
+                positions[0][1] = h_se;
+                positions[3][1] = h_ne;
+            }
+            _ => {}
         }
 
         emit_face_into(

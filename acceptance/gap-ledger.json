@@ -107,8 +107,12 @@
       "wave": "5",
       "area": "rendering",
       "requirement": "Tinted, height-aware, directional fluids with correct translucent ordering",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "pomme-client/src/renderer/chunk/mesher.rs: emit_fluid computes 4-corner smoothed fluid heights and water_flow texture for flowing water",
+        "pomme-client/src/renderer/chunk/mesher.rs: ChunkStoreSnapshot blends biome water_color across adjacent columns",
+        "pomme-client/src/renderer/chunk/buffer.rs: draw_water depth-sorts translucent chunk sections back-to-front relative to camera eye distance"
+      ]
     },
     {
       "id": "block-entity-rendering",
@@ -1048,8 +1052,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "draw_water depth-sorts translucent chunk sections back-to-front relative to camera eye distance before draw call dispatch",
+        "chunk buffer compilation and rendering tests verify back-to-front ordering for translucent water geometry"
+      ]
     },
     {
       "id": "marker-2624c20c41a6",
@@ -1070,8 +1077,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "connection extracts water_color from biome NBT into BiomeClimate, and ChunkStoreSnapshot blends water_tint across adjacent columns",
+        "block_face_tex_tint applies blended water_tint to water quad vertices"
+      ]
     },
     {
       "id": "marker-2483e2e23596",
@@ -1081,8 +1091,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "emit_fluid averages fluid heights across 4 adjacent columns per corner to generate smoothed fluid tops",
+        "chunk mesher tests verify corner heights on fluid quads"
+      ]
     },
     {
       "id": "marker-c509d8472536",
@@ -1092,8 +1105,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "block_face_tex_tint selects water_flow for flowing water (amount < 8) and water_still for source blocks",
+        "fluid_states test verifies fluid amount extraction across still and flowing states"
+      ]
     },
     {
       "id": "marker-dc572b7e0008",
@@ -1103,8 +1119,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "fluid_corner_height calculates flowing water corner heights using amount / 9.0 and full height 1.0 under fluids",
+        "emit_fluid aligns top and side vertices with computed corner heights"
+      ]
     },
     {
       "id": "marker-32fede188b37",
