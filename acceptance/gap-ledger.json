@@ -637,8 +637,11 @@
       "occurrence": 0,
       "wave": "2-3",
       "area": "protocol-compatibility",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "translate_update_advancements_765 rewrites old-form icon items into bare 26.2 item stacks, transcodes pre-1.20.3 JSON components, skips 763 criteria sets, and appends showAdvancements=true",
+        "translate_update_advancements tests cover 765 icons, absent icons, no-display advancements, 763 named NBT with JSON components and criteria, progress-only frames, and malformed frame rejection"
+      ]
     },
     {
       "id": "marker-d6046eb03b41",

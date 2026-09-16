@@ -198,7 +198,7 @@
 //!   `update_mob_effect` has a byte amplifier plus trailing factor NBT
 //! - `level_particles` leads with the particle type id; `chat_command` is
 //!   always the signed form (empty signatures appended)
-//! - `update_advancements` drops (old-form icons nested in display data);
+//! - `update_advancements` translates bare icons and appends `showAdvancements`;
 //!   serializer ids from `particles` (18) up shift
 //! - `player_chat`/`disguised_chat` carry a direct chat-type registry id where
 //!   1.20.5 put a holder (bumped by one on the way through)
@@ -242,8 +242,8 @@
 //! - `update_enabled_features` is a game packet here (1.20.2 moved it into
 //!   configuration) and drops through the id map; `update_tags` stayed a game
 //!   packet, 1.20.2 only adding a configuration copy beside it. Pomme reads
-//!   neither. `update_advancements` still nests its criteria map, but the 765
-//!   gate already drops the packet for its old-form icons
+//!   neither. `update_advancements` skips criteria on 763, transcodes pre-1.20.3 JSON
+//!   components, and translates bare icons
 //! - `set_display_objective` wrote a byte where 1.20.2 writes a varint; every
 //!   slot id is under 128, so the bytes match. Every other packet 1.20.2
 //!   touched (`player_info_update`, `merchant_offers`, `set_equipment`,
@@ -466,9 +466,9 @@ struct Ids765 {
     level_particles_id: u32,
     container_set_slot_id: u32,
     respawn_id: u32,
-    /// Dropped quietly: the advancement icons are old-form items nested in
-    /// display NBT the walker can't rewrite.
-    /// TODO: rewrite the icons bare so 765 advancement toasts show.
+    /// Inbound `update_advancements`: rewrites old-form icons bare, transcodes
+    /// pre-1.20.3 JSON components, skips 763 criteria, and appends
+    /// `showAdvancements = true`.
     update_advancements_id: u32,
     /// Pre-1.20.5 chat packets carry a direct chat-type registry id where
     /// 1.20.5 put a holder (id + 1).
@@ -925,10 +925,6 @@ impl Translation {
             tracing::debug!("Dropping game packet {id} with no 1.21.1 equivalent layout");
             return None;
         }
-        if v765.is_some_and(|v| id == v.update_advancements_id) {
-            tracing::debug!("Dropping update_advancements with old-form icons");
-            return None;
-        }
         let v764 = self.game_ids.as_ref().and_then(|g| g.v764.as_ref());
         if v764.is_some_and(|v| v.drops.contains(&id)) {
             tracing::debug!("Dropping unconsumed component packet {id}");
@@ -1001,6 +997,14 @@ impl Translation {
                 translate_set_equipment_765(id, payload, named_nbt)
             } else if v765.is_some_and(|v| id == v.merchant_offers_id) {
                 translate_merchant_offers_765(id, payload, named_nbt)
+            } else if v765.is_some_and(|v| id == v.update_advancements_id) {
+                translate_update_advancements_765(
+                    id,
+                    payload,
+                    named_nbt,
+                    ids.v764.is_some(),
+                    ids.v763.is_some(),
+                )
             } else if v765.is_some_and(|v| id == v.container_set_slot_id) {
                 v767.and_then(|v| translate_container_set_slot_765(v, payload, named_nbt))
             } else if let Some(v) = v767.filter(|v| id == v.explode_id) {
@@ -2148,6 +2152,78 @@ fn translate_merchant_offers_765(id: u32, payload: &[u8], named_nbt: bool) -> Op
         out.extend_from_slice(&payload[tail_at..cur.position() as usize]);
     }
     out.extend_from_slice(&payload[cur.position() as usize..]);
+    Some(out)
+}
+
+/// Rewrites `update_advancements` for protocols 763..=765:
+/// - walks added advancements
+/// - converts old-form item stack icons to bare 26.2 item stacks
+/// - transcodes JSON title/description to NBT on 763-764, or copies NBT on 765
+/// - skips criteria map on 763
+/// - copies requirements and telemetry
+/// - passes removed and progress sections through verbatim
+/// - appends `showAdvancements = true` (from 1.21.5+)
+fn translate_update_advancements_765(
+    id: u32,
+    payload: &[u8],
+    named_nbt: bool,
+    json_components: bool,
+    has_criteria: bool,
+) -> Option<Vec<u8>> {
+    let mut cur = Cursor::new(payload);
+    let mut out = Vec::with_capacity(payload.len() + 16);
+    wire::write_varint(&mut out, id);
+
+    let reset = read_u8(&mut cur)?;
+    out.push(reset);
+
+    let added_count = copy_varint(&mut cur, &mut out)?;
+    for _ in 0..added_count {
+        copy_utf(&mut cur, &mut out)?; // advancement id
+        copy_optional(&mut cur, &mut out, copy_utf)?; // parent id
+
+        let has_display = read_u8(&mut cur)?;
+        out.push(has_display);
+        if has_display != 0 {
+            if json_components {
+                transcode_component(&mut cur, &mut out)?;
+                transcode_component(&mut cur, &mut out)?;
+            } else {
+                copy_nbt(&mut cur, &mut out)?;
+                copy_nbt(&mut cur, &mut out)?;
+            }
+            translate_item_765(&mut cur, &mut out, named_nbt)?;
+            copy_varint(&mut cur, &mut out)?; // frame type
+
+            let flags = read_i32(&mut cur)?;
+            out.extend_from_slice(&flags.to_be_bytes());
+            if flags & 0x01 != 0 {
+                copy_utf(&mut cur, &mut out)?; // background
+            }
+            copy_bytes(&mut cur, &mut out, 8)?; // x and y floats
+        }
+
+        if has_criteria {
+            let criteria_count = u32::azalea_read_var(&mut cur).ok()?;
+            for _ in 0..criteria_count {
+                skip_utf(&mut cur)?;
+            }
+        }
+
+        let req_outer = copy_varint(&mut cur, &mut out)?;
+        for _ in 0..req_outer {
+            let req_inner = copy_varint(&mut cur, &mut out)?;
+            for _ in 0..req_inner {
+                copy_utf(&mut cur, &mut out)?;
+            }
+        }
+
+        let telemetry = read_u8(&mut cur)?;
+        out.push(telemetry);
+    }
+
+    out.extend_from_slice(&payload[cur.position() as usize..]);
+    out.push(1); // showAdvancements = true
     Some(out)
 }
 

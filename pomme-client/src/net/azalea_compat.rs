@@ -1583,6 +1583,279 @@ fn translate_update_advancements_769() {
     assert!(p.show_advancements);
 }
 
+/// Inbound 765 `update_advancements` rewrites old-form icons bare,
+/// preserves title/description NBT, and appends `showAdvancements = true`.
+#[test]
+fn translate_update_advancements_765_with_icon() {
+    use azalea_buf::AzBuf;
+    use azalea_protocol::packets::game::c_update_advancements::FrameType;
+
+    let mut old = Vec::new();
+    wire::write_varint(
+        &mut old,
+        old_id(765, Direction::Clientbound, "update_advancements"),
+    );
+    old.push(1); // reset: true
+    wire::write_varint(&mut old, 1); // 1 added advancement
+
+    write_utf(&mut old, "minecraft:story/root");
+    old.push(0); // parent_id: None
+    old.push(1); // has_display: true
+
+    azalea_chat::FormattedText::from("Story".to_string())
+        .azalea_write(&mut old)
+        .unwrap();
+    azalea_chat::FormattedText::from("The heart of the game".to_string())
+        .azalea_write(&mut old)
+        .unwrap();
+
+    // Old-form icon (stone, count 1, with NBT tag).
+    old.push(1); // present
+    wire::write_varint(&mut old, 1); // stone item id
+    old.push(1); // count
+    old.extend_from_slice(&[10, 1, 0, 1, b'd', 5, 0]); // unnamed NBT compound
+
+    wire::write_varint(&mut old, 0); // frame: Task
+    old.extend_from_slice(&0i32.to_be_bytes()); // flags: no background, no toast, not hidden
+    old.extend_from_slice(&0.0f32.to_be_bytes()); // x
+    old.extend_from_slice(&0.0f32.to_be_bytes()); // y
+
+    wire::write_varint(&mut old, 1); // requirements: 1 outer
+    wire::write_varint(&mut old, 1); // 1 inner
+    write_utf(&mut old, "crafting_table");
+    old.push(0); // sends_telemetry: false
+
+    wire::write_varint(&mut old, 0); // removed: 0
+    wire::write_varint(&mut old, 0); // progress: 0
+
+    let ClientboundGamePacket::UpdateAdvancements(p) = translate_and_decode(765, old) else {
+        panic!("wrong packet");
+    };
+    assert!(p.reset);
+    assert!(p.show_advancements);
+    assert_eq!(p.added.len(), 1);
+    let holder = &p.added[0];
+    assert_eq!(holder.id, azalea_registry::identifier::Identifier::new("minecraft:story/root"));
+    assert_eq!(holder.value.parent_id, None);
+    let display = holder.value.display.as_ref().expect("display missing");
+    assert_eq!(display.title.to_string(), "Story");
+    assert_eq!(display.description.to_string(), "The heart of the game");
+    assert_eq!(display.frame, FrameType::Task);
+    let azalea_inventory::ItemStack::Present(data) = &display.icon else {
+        panic!("expected present icon stack");
+    };
+    assert_eq!(data.kind, azalea_registry::builtin::ItemKind::Stone);
+    assert_eq!(data.count, 1);
+    assert_eq!(holder.value.requirements, vec![vec!["crafting_table".to_string()]]);
+    assert!(!holder.value.sends_telemetry_event);
+}
+
+/// 765 `update_advancements` with absent icon (empty stack) and no display.
+#[test]
+fn translate_update_advancements_765_absent_icon_and_no_display() {
+    use azalea_buf::AzBuf;
+    let mut old = Vec::new();
+    wire::write_varint(
+        &mut old,
+        old_id(765, Direction::Clientbound, "update_advancements"),
+    );
+    old.push(0); // reset: false
+    wire::write_varint(&mut old, 2); // 2 added advancements
+
+    // First: display present, but icon absent (empty stack)
+    write_utf(&mut old, "minecraft:story/empty_icon");
+    old.push(0); // parent_id: None
+    old.push(1); // has_display: true
+    azalea_chat::FormattedText::from("Empty Icon".to_string())
+        .azalea_write(&mut old)
+        .unwrap();
+    azalea_chat::FormattedText::from("No icon item".to_string())
+        .azalea_write(&mut old)
+        .unwrap();
+    old.push(0); // icon: absent (present = false)
+    wire::write_varint(&mut old, 1); // frame: Challenge
+    old.extend_from_slice(&0i32.to_be_bytes()); // flags
+    old.extend_from_slice(&1.0f32.to_be_bytes()); // x
+    old.extend_from_slice(&2.0f32.to_be_bytes()); // y
+    wire::write_varint(&mut old, 0); // requirements: 0
+    old.push(1); // sends_telemetry: true
+
+    // Second: no display at all
+    write_utf(&mut old, "minecraft:story/no_display");
+    old.push(1); // parent_id: Some
+    write_utf(&mut old, "minecraft:story/empty_icon");
+    old.push(0); // has_display: false
+    wire::write_varint(&mut old, 0); // requirements: 0
+    old.push(0); // sends_telemetry: false
+
+    wire::write_varint(&mut old, 0); // removed: 0
+    wire::write_varint(&mut old, 0); // progress: 0
+
+    let ClientboundGamePacket::UpdateAdvancements(p) = translate_and_decode(765, old) else {
+        panic!("wrong packet");
+    };
+    assert!(!p.reset);
+    assert!(p.show_advancements);
+    assert_eq!(p.added.len(), 2);
+
+    let d1 = p.added[0].value.display.as_ref().expect("display 0 missing");
+    assert!(matches!(d1.icon, azalea_inventory::ItemStack::Empty));
+
+    assert!(p.added[1].value.display.is_none());
+    assert_eq!(
+        p.added[1].value.parent_id,
+        Some(azalea_registry::identifier::Identifier::new("minecraft:story/empty_icon"))
+    );
+}
+
+/// 763 `update_advancements`: named NBT root in old-form items, JSON components,
+/// criteria map skipped, and progress decoded.
+#[test]
+fn translate_update_advancements_763() {
+    use azalea_protocol::packets::game::c_update_advancements::FrameType;
+
+    let mut old = Vec::new();
+    wire::write_varint(
+        &mut old,
+        old_id(763, Direction::Clientbound, "update_advancements"),
+    );
+    old.push(0); // reset: false
+    wire::write_varint(&mut old, 1); // 1 added advancement
+
+    write_utf(&mut old, "minecraft:adventure/root");
+    old.push(0); // parent_id: None
+    old.push(1); // has_display: true
+
+    write_json(&mut old, r#"{"text":"Adventure"}"#);
+    write_json(&mut old, r#"{"text":"Adventure, exploration"}"#);
+
+    // Old-form icon with named root NBT.
+    old.push(1); // present
+    wire::write_varint(&mut old, 1); // stone
+    old.push(2); // count: 2
+    write_named_nbt_d5(&mut old);
+
+    wire::write_varint(&mut old, 2); // frame: Goal
+    let flags = 0x01i32; // has_background: true
+    old.extend_from_slice(&flags.to_be_bytes());
+    write_utf(
+        &mut old,
+        "minecraft:textures/gui/advancements/backgrounds/adventure.png",
+    );
+    old.extend_from_slice(&3.5f32.to_be_bytes()); // x
+    old.extend_from_slice(&4.5f32.to_be_bytes()); // y
+
+    // 763 criteria map: 2 criteria strings.
+    wire::write_varint(&mut old, 2);
+    write_utf(&mut old, "killed_something");
+    write_utf(&mut old, "found_biome");
+
+    // Requirements: 1 requirement.
+    wire::write_varint(&mut old, 1);
+    wire::write_varint(&mut old, 1);
+    write_utf(&mut old, "killed_something");
+    old.push(1); // sends_telemetry: true
+
+    // Removed: 1 advancement.
+    wire::write_varint(&mut old, 1);
+    write_utf(&mut old, "minecraft:adventure/old");
+
+    // Progress: 1 advancement progress entry.
+    wire::write_varint(&mut old, 1);
+    write_utf(&mut old, "minecraft:adventure/root");
+    wire::write_varint(&mut old, 1); // 1 criterion progress
+    write_utf(&mut old, "killed_something");
+    old.push(1); // date present: true
+    old.extend_from_slice(&9876543210u64.to_be_bytes());
+
+    let ClientboundGamePacket::UpdateAdvancements(p) = translate_and_decode(763, old) else {
+        panic!("wrong packet");
+    };
+    assert!(!p.reset);
+    assert!(p.show_advancements);
+    assert_eq!(p.added.len(), 1);
+    let display = p.added[0].value.display.as_ref().expect("display missing");
+    assert_eq!(display.title.to_string(), "Adventure");
+    assert_eq!(display.description.to_string(), "Adventure, exploration");
+    assert_eq!(display.frame, FrameType::Goal);
+    assert_eq!(
+        display.background,
+        Some(azalea_registry::identifier::Identifier::new(
+            "minecraft:textures/gui/advancements/backgrounds/adventure.png"
+        ))
+    );
+    let azalea_inventory::ItemStack::Present(data) = &display.icon else {
+        panic!("expected present icon");
+    };
+    assert_eq!(data.kind, azalea_registry::builtin::ItemKind::Stone);
+    assert_eq!(data.count, 2);
+
+    assert_eq!(
+        p.removed,
+        vec![azalea_registry::identifier::Identifier::new("minecraft:adventure/old")]
+    );
+    let prog = p
+        .progress
+        .get(&azalea_registry::identifier::Identifier::new("minecraft:adventure/root"))
+        .expect("progress entry missing");
+    let crit = prog.get("killed_something").expect("criterion missing");
+    assert_eq!(crit.date, Some(9876543210));
+}
+
+/// Progress-only advancement packets translate without added advancements.
+#[test]
+fn translate_update_advancements_765_progress_only() {
+    let mut old = Vec::new();
+    wire::write_varint(
+        &mut old,
+        old_id(765, Direction::Clientbound, "update_advancements"),
+    );
+    old.push(0); // reset: false
+    wire::write_varint(&mut old, 0); // added: 0
+    wire::write_varint(&mut old, 0); // removed: 0
+    wire::write_varint(&mut old, 1); // progress: 1
+    write_utf(&mut old, "minecraft:story/mine_stone");
+    wire::write_varint(&mut old, 1);
+    write_utf(&mut old, "get_stone");
+    old.push(0); // date: None
+
+    let ClientboundGamePacket::UpdateAdvancements(p) = translate_and_decode(765, old) else {
+        panic!("wrong packet");
+    };
+    assert!(!p.reset);
+    assert!(p.show_advancements);
+    assert_eq!(p.added.len(), 0);
+    assert_eq!(p.removed.len(), 0);
+    let prog = p
+        .progress
+        .get(&azalea_registry::identifier::Identifier::new("minecraft:story/mine_stone"))
+        .expect("progress entry missing");
+    let crit = prog.get("get_stone").expect("criterion missing");
+    assert_eq!(crit.date, None);
+}
+
+/// Malformed 765 advancement frames drop cleanly.
+#[test]
+fn translate_update_advancements_765_malformed() {
+    let mut truncated = Vec::new();
+    wire::write_varint(
+        &mut truncated,
+        old_id(765, Direction::Clientbound, "update_advancements"),
+    );
+    truncated.push(1); // reset: true
+    wire::write_varint(&mut truncated, 1); // 1 added advancement
+    write_utf(&mut truncated, "minecraft:story/root");
+    truncated.push(0); // parent_id: None
+    truncated.push(1); // has_display: true
+    // Truncated here: missing title, description, etc.
+
+    assert!(
+        translation_for(765)
+            .translate_game_frame(truncated.into_boxed_slice())
+            .is_none()
+    );
+}
+
 /// A 26.2 `container_click` carries hashed stacks; 1.21.4 wants full item
 /// stacks, reconstructed bare (`ServerboundContainerClickPacket` in both
 /// references).
