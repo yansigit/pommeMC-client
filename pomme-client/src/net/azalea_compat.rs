@@ -2513,6 +2513,50 @@ fn translate_config_registry_data_765() {
     assert_eq!(p.data_to_keep, 3);
 }
 
+/// A reconfiguration whose registry data omits dimension_type keeps the
+/// previously established dimension_type indices for spawn-info rewrites.
+#[test]
+fn translate_config_reconfiguration_omits_dimension_type_765() {
+    use azalea_buf::AzBuf;
+    use azalea_registry::DataRegistry;
+    use simdnbt::owned::{NbtCompound, NbtTag};
+
+    // 1. Initial configuration sets dimension_type.
+    let root = dimension_registry_codec(&[
+        ("minecraft:custom_end", 1),
+        ("minecraft:custom_overworld", 0),
+    ]);
+    let mut old = Vec::new();
+    wire::write_varint(
+        &mut old,
+        config_id(765, Direction::Clientbound, "registry_data"),
+    );
+    NbtTag::Compound(root).azalea_write(&mut old).unwrap();
+    let frames = translation_for(765).translate_config_frame(old.into_boxed_slice());
+    assert_eq!(frames.len(), 1);
+
+    // 2. Incomplete reconfiguration sends empty registry map (omitting dimension_type).
+    let mut reconfig = Vec::new();
+    wire::write_varint(
+        &mut reconfig,
+        config_id(765, Direction::Clientbound, "registry_data"),
+    );
+    NbtTag::Compound(NbtCompound::new()).azalea_write(&mut reconfig).unwrap();
+    let reconfig_frames = translation_for(765).translate_config_frame(reconfig.into_boxed_slice());
+    assert_eq!(reconfig_frames.len(), 0);
+
+    // 3. Subsequent respawn still resolves the previously established dimension_type index.
+    let mut respawn = Vec::new();
+    wire::write_varint(&mut respawn, old_id(765, Direction::Clientbound, "respawn"));
+    write_spawn_info_765(&mut respawn, "minecraft:custom_end", "minecraft:overworld");
+    respawn.push(3);
+
+    let ClientboundGamePacket::Respawn(p) = translate_and_decode(765, respawn) else {
+        panic!("wrong packet");
+    };
+    assert_eq!(p.common.dimension_type.protocol_id(), 1);
+}
+
 /// A 765 `CommonPlayerSpawnInfo`: dimension-type key, dimension name, then
 /// the shared tail (seed 42, survival, no previous type, no death location).
 fn write_spawn_info_765(old: &mut Vec<u8>, dimension_type: &str, dimension: &str) {

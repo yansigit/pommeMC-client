@@ -1511,7 +1511,7 @@ impl GameIds {
 /// field there would scope it no better. One connection at a time is an
 /// assumption of this module.
 ///
-/// TODO: a reconfiguration whose registry data omits dimension_type keeps the
+/// A reconfiguration whose registry data omits dimension_type keeps the
 /// previous list (as `config_sequence` keeps the previous `RegistryHolder`).
 static DIMENSION_TYPES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 

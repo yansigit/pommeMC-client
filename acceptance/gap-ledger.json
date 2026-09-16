@@ -676,8 +676,11 @@
       "occurrence": 0,
       "wave": "2-3",
       "area": "protocol-compatibility",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "config_sequence clones previous registries on reconfiguration so omitted registries like dimension_type are retained",
+        "translate_config_reconfiguration_omits_dimension_type_765 verifies that a reconfiguration packet omitting dimension_type retains prior indices for respawn spawn-info translation"
+      ]
     },
     {
       "id": "marker-e417df24e455",

@@ -776,11 +776,11 @@ async fn config_sequence(
     // returns the original registries unchanged in that case).
     previous_registries: Option<&std::sync::Arc<azalea_core::registry_holder::RegistryHolder>>,
 ) -> Result<std::sync::Arc<azalea_core::registry_holder::RegistryHolder>, ConnectionError> {
-    use azalea_core::registry_holder::RegistryHolder;
     use azalea_protocol::packets::config::*;
 
-    let mut registry_holder = RegistryHolder::default();
-    let mut received_registry_data = false;
+    let mut registry_holder = previous_registries
+        .map(|p| (**p).clone())
+        .unwrap_or_default();
 
     // Vanilla sends brand and client information once, from the login
     // listener; a reconfiguration sends neither.
@@ -866,7 +866,6 @@ async fn config_sequence(
         };
         match packet {
             ClientboundConfigPacket::RegistryData(p) => {
-                received_registry_data = true;
                 registry_holder.append(p.registry_id, p.entries);
             }
             ClientboundConfigPacket::UpdateTags(_) => {
@@ -903,10 +902,7 @@ async fn config_sequence(
                     ),
                 )
                 .await?;
-                return Ok(match previous_registries {
-                    Some(previous) if !received_registry_data => previous.clone(),
-                    _ => std::sync::Arc::new(registry_holder),
-                });
+                return Ok(std::sync::Arc::new(registry_holder));
             }
             ClientboundConfigPacket::Disconnect(p) => {
                 return Err(ConnectionError::Disconnected(format!("{}", p.reason)));
