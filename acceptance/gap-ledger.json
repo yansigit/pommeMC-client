@@ -659,8 +659,11 @@
       "occurrence": 0,
       "wave": "2-3",
       "area": "protocol-compatibility",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "translate_mount_screen_open_766 converts the pre-1.21 total slot count with the vanilla formula columns = (slots - 2) / 3 and rejects non-vanilla layouts",
+        "translate_horse_screen_slot_counts_766_and_older decodes plain horse, llama, and chested-mount values through every supported protocol 763-766"
+      ]
     },
     {
       "id": "marker-60faae95e31b",

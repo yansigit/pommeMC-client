@@ -175,9 +175,9 @@
 //!   (wire-identical), and the block set matches 1.21.1's
 //! - `horse_screen_open`'s middle varint changed meaning rather than layout:
 //!   1.20.6 sends the container's slot count where 1.21 sends the mount's
-//!   inventory column count (`columns = (size - 1) / 3` — 1 for a plain horse,
-//!   16 for a chested donkey, `1 + 3c` for a llama). Passed through untouched,
-//!   which costs nothing while pomme has no mount-inventory screen
+//!   inventory column count. `columns = (slots - 2) / 3` maps 2 -> 0 for a
+//!   plain horse, 17 -> 5 for a chested donkey, and `2 + 3c` -> `c` for a
+//!   llama; the frame rewrite performs that conversion
 //!
 //! 1.20.4 -> 26.2 wire changes (the 1.20.5 item-component rework; all of
 //! 1.20.6's plus):
@@ -441,6 +441,7 @@ impl Ids767 {
 /// Latest-space dispatch ids for the frame rewrites protocol 766 needs.
 struct Ids766 {
     projectile_power_id: u32,
+    mount_screen_open_id: u32,
     /// Serverbound `use_item`: latest + wire ids for the rotation strip.
     use_item_id: u32,
     use_item_old_id: u32,
@@ -448,7 +449,11 @@ struct Ids766 {
 
 impl Ids766 {
     fn rewrite(&self, id: u32) -> Option<FrameRewrite> {
-        (id == self.projectile_power_id).then_some(translate_projectile_power_766 as FrameRewrite)
+        Some(match id {
+            i if i == self.projectile_power_id => translate_projectile_power_766,
+            i if i == self.mount_screen_open_id => translate_mount_screen_open_766,
+            _ => return None,
+        })
     }
 }
 
@@ -1278,9 +1283,8 @@ impl Translation {
 /// treats each pair as the same packet.
 const RENAMED: &[(&str, &str)] = &[
     // `ClientboundHorseScreenOpenPacket` vs `ClientboundMountScreenOpenPacket`
-    // in the references, byte-identical write() bodies.
-    // TODO: convert 766's slot count to 1.21's column count once a mount
-    // inventory screen exists (see the 1.20.6 changelog above).
+    // in the references. Protocols 767+ have byte-identical bodies; the 766
+    // rewrite converts the older total-slot count to inventory columns.
     ("horse_screen_open", "mount_screen_open"),
     // Renamed by 1.21.2, byte-identical single-slot bodies.
     ("set_carried_item", "set_held_slot"),
@@ -1400,6 +1404,7 @@ impl GameIds {
             }),
             v766: (protocol <= 766).then(|| Ids766 {
                 projectile_power_id: id(Clientbound, "projectile_power"),
+                mount_screen_open_id: id(Clientbound, "mount_screen_open"),
                 use_item_id: id(Serverbound, "use_item"),
                 use_item_old_id: required_id(table, Phase::Game, Serverbound, "use_item"),
             }),
@@ -2858,6 +2863,32 @@ fn translate_projectile_power_766(id: u32, payload: &[u8]) -> Option<Vec<u8>> {
     wire::write_varint(&mut out, id);
     out.extend_from_slice(&payload[entity]);
     out.extend_from_slice(&sq.sqrt().to_be_bytes());
+    Some(out)
+}
+
+/// Rewrites the pre-1.21 horse screen's total inventory-slot count into the
+/// inventory-column count the modern mount screen consumes. Vanilla mounts
+/// have two fixed equipment slots plus three storage slots per column.
+fn translate_mount_screen_open_766(id: u32, payload: &[u8]) -> Option<Vec<u8>> {
+    let mut cur = Cursor::new(payload);
+    let container = varint_span(&mut cur)?;
+    let slots = u32::azalea_read_var(&mut cur).ok()?;
+    let storage_slots = slots.checked_sub(2)?;
+    if storage_slots % 3 != 0 {
+        return None;
+    }
+    let columns = storage_slots / 3;
+    let entity_at = cur.position() as usize;
+    advance(&mut cur, 4)?;
+    if cur.position() as usize != payload.len() {
+        return None;
+    }
+
+    let mut out = Vec::with_capacity(payload.len());
+    wire::write_varint(&mut out, id);
+    out.extend_from_slice(&payload[container]);
+    wire::write_varint(&mut out, columns);
+    out.extend_from_slice(&payload[entity_at..]);
     Some(out)
 }
 

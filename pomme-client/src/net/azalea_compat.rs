@@ -909,6 +909,48 @@ fn translate_horse_screen_open_773() {
     assert_eq!(p.entity_id, MinecraftEntityId(42));
 }
 
+/// Through 1.20.6 the middle field is the total horse-container slot count,
+/// not the storage-column count introduced by 1.21. The translation converts
+/// all supported legacy layouts and rejects values no vanilla mount can emit.
+#[test]
+fn translate_horse_screen_slot_counts_766_and_older() {
+    for protocol in [766, 765, 764, 763] {
+        for (slots, columns) in [(2, 0), (5, 1), (14, 4), (17, 5)] {
+            let mut old = Vec::new();
+            wire::write_varint(
+                &mut old,
+                old_id(protocol, Direction::Clientbound, "horse_screen_open"),
+            );
+            wire::write_varint(&mut old, 1); // container id
+            wire::write_varint(&mut old, slots);
+            old.extend_from_slice(&42i32.to_be_bytes());
+
+            let ClientboundGamePacket::MountScreenOpen(p) = translate_and_decode(protocol, old)
+            else {
+                panic!("wrong packet for protocol {protocol}");
+            };
+            assert_eq!(p.container_id, 1, "protocol {protocol}");
+            assert_eq!(p.inventory_columns, columns, "protocol {protocol}");
+            assert_eq!(p.entity_id, MinecraftEntityId(42), "protocol {protocol}");
+        }
+
+        let mut malformed = Vec::new();
+        wire::write_varint(
+            &mut malformed,
+            old_id(protocol, Direction::Clientbound, "horse_screen_open"),
+        );
+        wire::write_varint(&mut malformed, 1);
+        wire::write_varint(&mut malformed, 3); // not 2 + 3 * columns
+        malformed.extend_from_slice(&42i32.to_be_bytes());
+        assert!(
+            translation_for(protocol)
+                .translate_game_frame(malformed.into_boxed_slice())
+                .is_none(),
+            "protocol {protocol}"
+        );
+    }
+}
+
 // 1.21.8's serverbound layouts and the 26.x-era clientbound rewrites match
 // 1.21.10's (chunk fluidCount, set_time, game login, login_finished, team,
 // attack/interact are covered by the 774/773 tests above); the tests below
