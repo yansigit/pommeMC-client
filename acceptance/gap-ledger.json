@@ -15,7 +15,7 @@
       "wave": "0",
       "area": "acceptance",
       "requirement": "Executable scenario manifests, bounded process orchestration, traces, and artifacts",
-      "status": "in_progress",
+      "status": "closed",
       "evidence": [
         "tools/acceptance/src/main.rs: bounded shell-free scenario orchestration, first-unmet-checkpoint diagnostics, logs, result JSON, and artifact validation",
         "acceptance/scenarios.json: integrated protocol, title render, and integrated gameplay scenarios",
