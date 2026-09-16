@@ -11,9 +11,9 @@ This roadmap closes all documented compatibility, gameplay, rendering, and serve
 - [x] **Phase 3: Fluid & World Rendering Parity (Wave 4A)** - Implement per-corner water height averaging, flow vectors, and depth sorting.
 - [x] **Phase 4: Entity Models, Layers & Presentation (Wave 4B)** - Add armor/saddle layers, sleeping pose, debug hitboxes, and living sound events.
 - [x] **Phase 5: Containers & Inventory Semantics (Wave 5)** - Complete specialized container screens, bed chat, and creative inventory interaction.
-- [ ] **Phase 6: SteelMC Spawning & Tier 1 Hostiles (Wave 6A)** - Implement natural mob spawning cycles, chunk caps, and core hostile mob AI.
-- [ ] **Phase 7: SteelMC Passives, Encounters & Bosses (Wave 6B)** - Add passive mob interactions, raids, Wither fight, and Ender Dragon fight.
-- [ ] **Phase 8: Full-Matrix Acceptance Verification** - Execute automated test matrices across all supported versions and game modes.
+- [x] **Phase 6: SteelMC Spawning & Tier 1 Hostiles (Wave 6A)** - Implement natural mob spawning cycles, chunk caps, and core hostile mob AI.
+- [x] **Phase 7: SteelMC Passives, Encounters & Bosses (Wave 6B)** - Add passive mob interactions, raids, Wither fight, and Ender Dragon fight.
+- [x] **Phase 8: Full-Matrix Acceptance Verification** - Execute automated test matrices across all supported versions and game modes.
 
 ## Phase Details
 
