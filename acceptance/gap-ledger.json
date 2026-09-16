@@ -782,8 +782,11 @@
       "occurrence": 0,
       "wave": "4",
       "area": "gameplay-state-and-physics",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "Crouch edge backoff now requires on-ground state, fall distance below step height, and support within the remaining step height",
+        "A collision-backed test covers grounded, partial-fall, full-step-fall, and airborne boundaries"
+      ]
     },
     {
       "id": "marker-07fd68b54381",

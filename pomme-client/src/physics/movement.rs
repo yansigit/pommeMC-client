@@ -441,6 +441,7 @@ fn apply_collision(
         *player.velocity,
         input.performing_action(input::Action::Sneak),
         player.on_ground,
+        player.fall_distance,
         player.flying,
     );
     let step_height = if player.on_ground { STEP_HEIGHT } else { 0.0 };
@@ -547,15 +548,13 @@ fn back_off_from_edge(
     delta: DVec3,
     shift_down: bool,
     on_ground: bool,
+    fall_distance: f64,
     flying: bool,
 ) -> DVec3 {
     if !shift_down || flying || delta.y > 0.0 {
         return delta;
     }
-    // TODO: fall distance - falling less than the step height still counts
-    // as above ground
-    let above_ground = on_ground || !can_fall_at_least(chunk_store, bb, 0.0, 0.0, STEP_HEIGHT);
-    if !above_ground {
+    if !is_above_ground(chunk_store, bb, on_ground, fall_distance, STEP_HEIGHT) {
         return delta;
     }
 
@@ -588,6 +587,21 @@ fn back_off_from_edge(
     }
 
     dvec3(dx, delta.y, dz)
+}
+
+/// Vanilla `LocalPlayer.isAboveGround`: crouch edge protection only applies
+/// while grounded, before the accumulated fall reaches the step height, and
+/// while a supporting shape remains within the unused portion of that height.
+fn is_above_ground(
+    chunk_store: &ChunkStore,
+    bb: &Aabb,
+    on_ground: bool,
+    fall_distance: f64,
+    step_height: f64,
+) -> bool {
+    on_ground
+        && fall_distance < step_height
+        && !can_fall_at_least(chunk_store, bb, 0.0, 0.0, step_height - fall_distance)
 }
 
 fn can_fall_at_least(
@@ -837,5 +851,34 @@ mod tests {
         assert!(player.flying);
         assert!(!player.on_ground);
         assert!(!player.horizontal_collision);
+    }
+
+    #[test]
+    fn edge_backoff_requires_ground_within_remaining_step_height() {
+        use azalea_core::position::ChunkPos;
+        use azalea_world::Chunk;
+
+        crate::world::block::init("26.2");
+        let mut chunks = ChunkStore::new(2);
+        let chunk_pos = ChunkPos::new(0, 0);
+        chunks.partial_storage.set(
+            &chunk_pos,
+            Some(Chunk::default()),
+            &mut chunks.chunk_storage,
+        );
+        let stone = crate::world::block::first_state_of("stone").expect("stone state");
+        chunks.set_block_state(0, -1, 0, stone);
+
+        let bb = Aabb::from_center(dvec3(0.5, 0.0, 0.5), PLAYER_HALF_WIDTH, PLAYER_HEIGHT / 2.0);
+        assert!(is_above_ground(&chunks, &bb, true, 0.0, STEP_HEIGHT));
+        assert!(is_above_ground(&chunks, &bb, true, 0.25, STEP_HEIGHT));
+        assert!(!is_above_ground(
+            &chunks,
+            &bb,
+            true,
+            STEP_HEIGHT,
+            STEP_HEIGHT
+        ));
+        assert!(!is_above_ground(&chunks, &bb, false, 0.0, STEP_HEIGHT));
     }
 }
