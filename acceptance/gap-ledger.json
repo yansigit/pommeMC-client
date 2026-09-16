@@ -43,8 +43,12 @@
       "wave": "2-3",
       "area": "protocol",
       "requirement": "Lossless supported 1.21.x and 1.20.x behavior translation",
-      "status": "open",
-      "evidence": []
+      "status": "in_progress",
+      "evidence": [
+        "pomme-client/src/net/azalea_compat.rs translate_explode_767_with_block_updates: protocol 767 power, affected blocks, knockback, particle selection, and sound reach current client events",
+        "pomme-client/src/net/translate.rs translate_game_frames: legacy packet fan-out preserves pre-1.21.2 destroyed-block updates",
+        "GitHub comparison: ViaVersion/ViaVersion 5f98cba BlockItemPacketRewriter1_21_2.java and Protocol1_21_7To1_21_9.java"
+      ]
     },
     {
       "id": "authoritative-client-state",
@@ -604,8 +608,11 @@
       "occurrence": 0,
       "wave": "2-3",
       "area": "protocol-compatibility",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "translate_explode_767 converts every legacy field into the 26.2 layout and emits synthetic air block updates for destructive modes",
+        "translate_explode_767_with_block_updates verifies the real raw handler emits knockback, sound, and large-particle effects"
+      ]
     },
     {
       "id": "marker-57c42f1e4421",

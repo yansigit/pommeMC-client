@@ -141,8 +141,8 @@
 //! - `update_recipes` and `place_ghost_recipe` restructured into 26.2's
 //!   `RecipeDisplay` trees with no mechanical mapping, so they're dropped and
 //!   the recipe book/stonecutter UIs stay empty on 1.21.1 servers (the
-//!   1.21.1-only `recipe` packet drops via the id map); `explode` is dropped
-//!   too, but only for want of a rewriter, so no explosions render either
+//!   1.21.1-only `recipe` packet drops via the id map); `explode` is rewritten,
+//!   including synthetic air block updates for its relative affected-block list
 //! - every attribute was renamed by dropping its category prefix
 //!   (`generic.armor` -> `armor`), handled by the registry-remap alias;
 //!   `boat`/`chest_boat` entities split per wood type and have no 26.2 ids, so
@@ -417,11 +417,11 @@ struct Ids767 {
     /// The ids the -1/-2 `container_set_slot` sentinels map onto.
     set_cursor_item_id: u32,
     set_player_inventory_id: u32,
-    /// Inbound packets dropped quietly (`explode`, `update_recipes`,
+    explode_id: u32,
+    block_update_id: u32,
+    /// Inbound packets dropped quietly (`update_recipes`,
     /// `place_ghost_recipe`).
-    /// TODO: translate `explode` — 1.21.1 carries every field 26.2 needs, with
-    /// an empty block-particle list like [`translate_explode`].
-    drops: [u32; 3],
+    drops: [u32; 2],
     player_input_id: u32,
     player_input_old_id: u32,
     /// The four `move_player_*` ids whose flags byte must drop to onGround.
@@ -998,6 +998,9 @@ impl Translation {
                 translate_merchant_offers_765(id, payload, named_nbt)
             } else if v765.is_some_and(|v| id == v.container_set_slot_id) {
                 v767.and_then(|v| translate_container_set_slot_765(v, payload, named_nbt))
+            } else if let Some(v) = v767.filter(|v| id == v.explode_id) {
+                translate_explode_767(v, payload, ids, self.to_latest)
+                    .and_then(|mut frames| frames.pop())
             } else if ids.v772.as_ref().is_some_and(|v| id == v.explode_id) {
                 translate_explode(id, payload, ids, self.to_latest)
             } else if let Some(rewrite) = ids.version_rewrite(id) {
@@ -1026,6 +1029,31 @@ impl Translation {
                 None
             }
         }
+    }
+
+    /// Like [`Self::translate_game_frame`], but retains packet fan-out needed
+    /// by old explosions. Before 1.21.2 the explosion packet itself carried
+    /// relative destroyed-block positions; current clients receive equivalent
+    /// block updates separately.
+    pub fn translate_game_frames(&self, raw: Box<[u8]>) -> Vec<Box<[u8]>> {
+        let mut id_end = 0;
+        let Some(wire_id) = wire::read_varint(&raw, &mut id_end) else {
+            return Vec::new();
+        };
+        let Some(ids) = &self.game_ids else {
+            return vec![raw];
+        };
+        let Some(id) = ids.inbound.get(wire_id as usize).copied().flatten() else {
+            return Vec::new();
+        };
+        if let Some(v) = ids.v767.as_ref().filter(|v| id == v.explode_id) {
+            return translate_explode_767(v, &raw[id_end..], ids, self.to_latest)
+                .unwrap_or_default()
+                .into_iter()
+                .map(Vec::into_boxed_slice)
+                .collect();
+        }
+        self.translate_game_frame(raw).into_iter().collect()
     }
 
     /// Whether outbound game frames need translation before hitting the
@@ -1354,8 +1382,9 @@ impl GameIds {
                 cooldown_id: id(Clientbound, "cooldown"),
                 set_cursor_item_id: id(Clientbound, "set_cursor_item"),
                 set_player_inventory_id: id(Clientbound, "set_player_inventory"),
+                explode_id: id(Clientbound, "explode"),
+                block_update_id: id(Clientbound, "block_update"),
                 drops: [
-                    id(Clientbound, "explode"),
                     id(Clientbound, "update_recipes"),
                     id(Clientbound, "place_ghost_recipe"),
                 ],
@@ -3698,6 +3727,94 @@ fn translate_explode(
     translate_sound_holder(&mut cur, &mut out, remaps)?;
     out.push(0); // no block particles
     Some(out)
+}
+
+/// Rewrites the pre-1.21.2 explosion layout. The conversion follows
+/// ViaVersion's pinned `BlockItemPacketRewriter1_21_2`: affected blocks become
+/// explicit air updates for DESTROY/DESTROY_WITH_DECAY, zero knockback becomes
+/// `None`, and the small/large particle is selected from power and interaction
+/// mode. The later 1.21.9 fields preserve the original power and block count.
+fn translate_explode_767(
+    v: &Ids767,
+    payload: &[u8],
+    ids: &GameIds,
+    remaps: &RegistryRemaps,
+) -> Option<Vec<Vec<u8>>> {
+    let mut cur = Cursor::new(payload);
+    let center = [
+        f64::azalea_read(&mut cur).ok()?,
+        f64::azalea_read(&mut cur).ok()?,
+        f64::azalea_read(&mut cur).ok()?,
+    ];
+    let power = f32::azalea_read(&mut cur).ok()?;
+    let block_count = u32::azalea_read_var(&mut cur).ok()?;
+    let block_count_i32 = i32::try_from(block_count).ok()?;
+    let origin = center.map(|value| value.floor() as i32);
+    let mut affected = Vec::with_capacity(block_count as usize);
+    for _ in 0..block_count {
+        let x = i8::azalea_read(&mut cur).ok()? as i32;
+        let y = i8::azalea_read(&mut cur).ok()? as i32;
+        let z = i8::azalea_read(&mut cur).ok()? as i32;
+        affected.push((origin[0] + x, origin[1] + y, origin[2] + z));
+    }
+    let knockback = [
+        f32::azalea_read(&mut cur).ok()?,
+        f32::azalea_read(&mut cur).ok()?,
+        f32::azalea_read(&mut cur).ok()?,
+    ];
+    let interaction = u32::azalea_read_var(&mut cur).ok()?;
+
+    let mut small_particle = Vec::new();
+    translate_particles(&mut cur, &mut small_particle, ids, remaps, false)?;
+    let mut large_particle = Vec::new();
+    translate_particles(&mut cur, &mut large_particle, ids, remaps, false)?;
+    let mut sound = Vec::new();
+    translate_sound_holder(&mut cur, &mut sound, remaps)?;
+    if cur.position() as usize != payload.len() {
+        return None;
+    }
+
+    let mut frames = Vec::with_capacity(affected.len() + 1);
+    if matches!(interaction, 1 | 2) {
+        for (x, y, z) in affected {
+            let mut update = Vec::with_capacity(12);
+            wire::write_varint(&mut update, v.block_update_id);
+            write_block_pos(&mut update, x, y, z);
+            wire::write_varint(&mut update, 0); // air
+            frames.push(update);
+        }
+    }
+
+    let mut explosion = Vec::with_capacity(payload.len() + 24);
+    wire::write_varint(&mut explosion, v.explode_id);
+    for value in center {
+        explosion.extend_from_slice(&value.to_be_bytes());
+    }
+    explosion.extend_from_slice(&power.to_be_bytes());
+    explosion.extend_from_slice(&block_count_i32.to_be_bytes());
+    if knockback.iter().any(|value| *value != 0.0) {
+        explosion.push(1);
+        for value in knockback {
+            explosion.extend_from_slice(&(value as f64).to_be_bytes());
+        }
+    } else {
+        explosion.push(0);
+    }
+    if power >= 2.0 && interaction != 0 {
+        explosion.extend_from_slice(&large_particle);
+    } else {
+        explosion.extend_from_slice(&small_particle);
+    }
+    explosion.extend_from_slice(&sound);
+    wire::write_varint(&mut explosion, 0); // no weighted block particles
+    frames.push(explosion);
+    Some(frames)
+}
+
+fn write_block_pos(out: &mut Vec<u8>, x: i32, y: i32, z: i32) {
+    let packed =
+        ((x as i64 & 0x3ff_ffff) << 38) | ((z as i64 & 0x3ff_ffff) << 12) | (y as i64 & 0xfff);
+    out.extend_from_slice(&packed.to_be_bytes());
 }
 
 fn remap_with<T: Registry>(remaps: &RegistryRemaps, reg: ClientRegistry, value: &mut T) -> bool {

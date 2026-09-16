@@ -1264,17 +1264,84 @@ pub fn handle_raw_game_packet(raw: &[u8], event_tx: &Sender<NetworkEvent>) -> bo
         };
     }
 
-    if packet_id != level_particles_packet_id() {
-        return false;
-    }
-    match parse_level_particles(&mut cur) {
-        Ok(Some(event)) => {
-            let _ = event_tx.try_send(event);
+    if packet_id == explosion_packet_id() {
+        match parse_explosion(&mut cur) {
+            Ok((explosion, sound)) => {
+                let _ = event_tx.try_send(explosion);
+                let _ = event_tx.try_send(sound);
+            }
+            Err(e) => tracing::warn!("Skipping malformed explosion packet: {e}"),
         }
-        Ok(None) => {}
-        Err(e) => tracing::warn!("Skipping malformed LevelParticles packet: {e}"),
+        return true;
     }
-    true
+
+    if packet_id == level_particles_packet_id() {
+        match parse_level_particles(&mut cur) {
+            Ok(Some(event)) => {
+                let _ = event_tx.try_send(event);
+            }
+            Ok(None) => {}
+            Err(e) => tracing::warn!("Skipping malformed LevelParticles packet: {e}"),
+        }
+        return true;
+    }
+    false
+}
+
+fn parse_explosion(
+    cur: &mut std::io::Cursor<&[u8]>,
+) -> Result<(NetworkEvent, NetworkEvent), azalea_buf::BufReadError> {
+    let center = glam::dvec3(
+        f64::azalea_read(cur)?,
+        f64::azalea_read(cur)?,
+        f64::azalea_read(cur)?,
+    );
+    let radius = f32::azalea_read(cur)?;
+    let _block_count = i32::azalea_read(cur)?;
+    let knockback = if bool::azalea_read(cur)? {
+        Some(glam::dvec3(
+            f64::azalea_read(cur)?,
+            f64::azalea_read(cur)?,
+            f64::azalea_read(cur)?,
+        ))
+    } else {
+        None
+    };
+    let particle_id = u32::azalea_read_var(cur)?;
+    let sound = SoundEvent::azalea_read(cur)?;
+    let explosion_emitter = pomme_protocol::RegistryTable::latest()
+        .names(pomme_protocol::ClientRegistry::ParticleType)
+        .iter()
+        .position(|name| name == "explosion_emitter")
+        .expect("explosion_emitter in particle registry") as u32;
+
+    Ok((
+        NetworkEvent::Explosion {
+            center,
+            radius,
+            knockback,
+            large_particle: particle_id == explosion_emitter,
+        },
+        NetworkEvent::PlaySound {
+            sound: crate::audio::SoundRef::event(sound.to_str()),
+            category: 4, // SoundSource.BLOCKS
+            pos: Position::new(center.x, center.y, center.z),
+            volume: 4.0,
+            pitch: 0.7,
+            seed: 0,
+        },
+    ))
+}
+
+fn explosion_packet_id() -> u32 {
+    use pomme_protocol::{Direction, PacketTable, Phase};
+
+    static ID: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *ID.get_or_init(|| {
+        PacketTable::latest()
+            .id(Phase::Game, Direction::Clientbound, "explode")
+            .expect("explode in packet table")
+    })
 }
 
 /// Azalea's pinned 26.2 `SoundSource` omits Vanilla's ordinal-10 `UI` value

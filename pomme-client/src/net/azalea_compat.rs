@@ -1243,6 +1243,81 @@ fn translate_explode_772() {
     assert!(p.block_particles.is_empty());
 }
 
+/// 1.21.1 carried power, affected-block offsets, three float knockback values,
+/// an interaction mode, and both candidate particles. The translator preserves
+/// the power/count, selects the large particle, and fans destructive offsets
+/// out into current `block_update` packets before the explosion.
+#[test]
+fn translate_explode_767_with_block_updates() {
+    use pomme_protocol::{ClientRegistry, RegistryTable};
+
+    let registry = RegistryTable::for_protocol(767).unwrap();
+    let registry_id = |kind, name| registry_id(registry, kind, name);
+    let mut old = Vec::new();
+    wire::write_varint(&mut old, old_id(767, Direction::Clientbound, "explode"));
+    for value in [10.75f64, 64.0, -2.25] {
+        old.extend_from_slice(&value.to_be_bytes());
+    }
+    old.extend_from_slice(&3.0f32.to_be_bytes()); // power
+    wire::write_varint(&mut old, 2);
+    old.extend_from_slice(&[1, 0, 255, 254, 1, 3]); // two signed xyz offsets
+    for value in [0.25f32, 0.0, -0.5] {
+        old.extend_from_slice(&value.to_be_bytes());
+    }
+    wire::write_varint(&mut old, 1); // DESTROY
+    wire::write_varint(
+        &mut old,
+        registry_id(ClientRegistry::ParticleType, "explosion"),
+    );
+    wire::write_varint(
+        &mut old,
+        registry_id(ClientRegistry::ParticleType, "explosion_emitter"),
+    );
+    wire::write_varint(
+        &mut old,
+        registry_id(ClientRegistry::SoundEvent, "entity.generic.explode") + 1,
+    );
+
+    let frames = translation_for(767).translate_game_frames(old.into_boxed_slice());
+    assert_eq!(frames.len(), 3);
+
+    for (frame, expected) in frames[..2].iter().zip([(11, 64, -4), (8, 65, 0)]) {
+        let packet =
+            azalea_protocol::read::deserialize_packet(&mut std::io::Cursor::new(frame.as_ref()))
+                .unwrap();
+        let ClientboundGamePacket::BlockUpdate(update) = packet else {
+            panic!("expected synthetic block update");
+        };
+        assert_eq!((update.pos.x, update.pos.y, update.pos.z), expected);
+        assert_eq!(update.block_state, Default::default());
+    }
+
+    // Azalea's pinned particle enum is out of sync with the registry, so the
+    // production path intentionally consumes explosions before typed decode.
+    let (event_tx, event_rx) = crossbeam_channel::bounded(2);
+    assert!(super::handler::handle_raw_game_packet(
+        frames[2].as_ref(),
+        &event_tx
+    ));
+    let super::NetworkEvent::Explosion {
+        center,
+        radius,
+        knockback,
+        large_particle,
+    } = event_rx.recv().unwrap()
+    else {
+        panic!("expected raw explosion event");
+    };
+    assert_eq!((center.x, center.y, center.z), (10.75, 64.0, -2.25));
+    assert_eq!(radius, 3.0);
+    assert_eq!(knockback, Some(glam::dvec3(0.25, 0.0, -0.5)));
+    assert!(large_particle);
+    assert!(matches!(
+        event_rx.recv().unwrap(),
+        super::NetworkEvent::PlaySound { volume: 4.0, .. }
+    ));
+}
+
 /// 1.21.5's `player_command` action enum still opens with PRESS/RELEASE_
 /// SHIFT_KEY (`ServerboundPlayerCommandPacket.Action` in both references),
 /// so a 26.2 action ordinal gains two on the old wire.

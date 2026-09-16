@@ -1562,6 +1562,18 @@ impl AppCore {
                         renderer.camera_render_position(),
                     );
                 }
+                NetworkEvent::Explosion {
+                    center,
+                    radius,
+                    knockback,
+                    large_particle,
+                } => {
+                    if let Some(knockback) = knockback {
+                        *game.player.velocity += knockback;
+                    }
+                    game.particle_store
+                        .add_explosion(center, radius, large_particle);
+                }
                 NetworkEvent::EntitiesRemoved { ids } => {
                     for id in &ids {
                         if let Some(entity) = game.entity_store.remove_living(*id)

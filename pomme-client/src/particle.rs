@@ -39,12 +39,14 @@ enum Kind {
     /// full-bright, 8-frame animation, fades after half-life, translucent
     /// layer.
     EndRod,
+    /// `ExplosionParticle`: stationary, full-bright animated billboard.
+    Explosion,
 }
 
 impl Kind {
     /// Vanilla `SingleQuadParticle.getLayer`.
     fn translucent(&self) -> bool {
-        matches!(self, Kind::EndRod)
+        matches!(self, Kind::EndRod | Kind::Explosion)
     }
 }
 
@@ -153,6 +155,31 @@ impl Particle {
         p
     }
 
+    fn explosion(pos: DVec3, size: f32, frames: &[AtlasRegion; 16]) -> Self {
+        let mut p = Self {
+            kind: Kind::Explosion,
+            pos,
+            prev_pos: pos,
+            vel: DVec3::ZERO,
+            age: 0,
+            lifetime: 6 + fastrand::i32(0..5),
+            on_ground: false,
+            stopped_by_collision: false,
+            gravity: 0.0,
+            friction: 1.0,
+            size,
+            u0: 0.0,
+            u1: 0.0,
+            v0: 0.0,
+            v1: 0.0,
+            color: [1.0; 3],
+            alpha: 1.0,
+            light: 1.0,
+        };
+        p.set_sprite(&frames[0]);
+        p
+    }
+
     /// Vanilla `SingleQuadParticle.setSprite`.
     fn set_sprite(&mut self, frame: &AtlasRegion) {
         self.u0 = frame.u_min;
@@ -171,7 +198,12 @@ impl Particle {
     }
 
     /// Vanilla `Particle.tick`. Returns false when the particle expires.
-    fn tick(&mut self, chunks: &ChunkStore, end_rod_frames: &[AtlasRegion; 8]) -> bool {
+    fn tick(
+        &mut self,
+        chunks: &ChunkStore,
+        end_rod_frames: &[AtlasRegion; 8],
+        explosion_frames: &[AtlasRegion; 16],
+    ) -> bool {
         self.prev_pos = self.pos;
         if self.age >= self.lifetime {
             return false;
@@ -182,6 +214,7 @@ impl Particle {
             Kind::Terrain => self.move_with_collision(chunks),
             // EndRodParticle.move() skips collision entirely.
             Kind::EndRod => self.pos += self.vel,
+            Kind::Explosion => {}
         }
         self.vel *= self.friction;
         if self.on_ground {
@@ -207,6 +240,10 @@ impl Particle {
                         *c += (f - *c) * 0.2;
                     }
                 }
+            }
+            Kind::Explosion => {
+                let frame = (self.age * 15 / self.lifetime).clamp(0, 15) as usize;
+                self.set_sprite(&explosion_frames[frame]);
             }
         }
         true
@@ -253,6 +290,25 @@ pub const END_ROD_SPRITES: [&str; 8] = [
     "particle/glitter_0",
 ];
 
+pub const EXPLOSION_SPRITES: [&str; 16] = [
+    "particle/explosion_0",
+    "particle/explosion_1",
+    "particle/explosion_2",
+    "particle/explosion_3",
+    "particle/explosion_4",
+    "particle/explosion_5",
+    "particle/explosion_6",
+    "particle/explosion_7",
+    "particle/explosion_8",
+    "particle/explosion_9",
+    "particle/explosion_10",
+    "particle/explosion_11",
+    "particle/explosion_12",
+    "particle/explosion_13",
+    "particle/explosion_14",
+    "particle/explosion_15",
+];
+
 /// Server-sent particle types pomme implements. `from_id` returning `None`
 /// drops the packet in the network handler, before the event channel.
 #[derive(Clone, Copy, Debug)]
@@ -287,6 +343,7 @@ pub struct ParticleStore {
     pending: Vec<Particle>,
     uv_map: AtlasUVMap,
     end_rod_frames: [AtlasRegion; 8],
+    explosion_frames: [AtlasRegion; 16],
     grass_colormap: Arc<Colormap>,
     foliage_colormap: Arc<Colormap>,
     dry_foliage_colormap: Arc<Colormap>,
@@ -300,11 +357,13 @@ impl ParticleStore {
         dry_foliage_colormap: Arc<Colormap>,
     ) -> Self {
         let end_rod_frames = END_ROD_SPRITES.map(|k| uv_map.get_region(k));
+        let explosion_frames = EXPLOSION_SPRITES.map(|k| uv_map.get_region(k));
         Self {
             particles: Vec::new(),
             pending: Vec::new(),
             uv_map,
             end_rod_frames,
+            explosion_frames,
             grass_colormap,
             foliage_colormap,
             dry_foliage_colormap,
@@ -439,6 +498,32 @@ impl ParticleStore {
         }
     }
 
+    /// Vanilla's explosion packet chooses either one small explosion particle
+    /// or an emitter. The emitter normally spreads its children over eight
+    /// ticks; this store queues the same visual burst together so packet
+    /// effects remain visible without a second stateful emitter type.
+    pub fn add_explosion(&mut self, center: DVec3, radius: f32, emitter: bool) {
+        let count = if emitter { 32 } else { 1 };
+        let spread = if emitter {
+            f64::from(radius.max(1.0)) * 0.5
+        } else {
+            0.0
+        };
+        for _ in 0..count {
+            let offset = dvec3(
+                (fastrand::f64() - 0.5) * spread,
+                (fastrand::f64() - 0.5) * spread,
+                (fastrand::f64() - 0.5) * spread,
+            );
+            let size = (1.5 + radius.max(0.0) * 0.1) * (0.8 + fastrand::f32() * 0.4);
+            self.push(Particle::explosion(
+                center + offset,
+                size,
+                &self.explosion_frames,
+            ));
+        }
+    }
+
     /// Vanilla `ClientPacketListener.handleParticleEvent`: count 0 is a
     /// single directional particle (velocity = dist * max_speed), otherwise a
     /// gaussian scatter of `count` particles around the position.
@@ -532,8 +617,10 @@ impl ParticleStore {
     }
 
     pub fn tick(&mut self, chunks: &ChunkStore) {
-        let frames = self.end_rod_frames;
-        self.particles.retain_mut(|p| p.tick(chunks, &frames));
+        let end_rod_frames = self.end_rod_frames;
+        let explosion_frames = self.explosion_frames;
+        self.particles
+            .retain_mut(|p| p.tick(chunks, &end_rod_frames, &explosion_frames));
         self.particles.append(&mut self.pending);
     }
 

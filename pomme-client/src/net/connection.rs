@@ -1171,8 +1171,13 @@ async fn game_loop(
     let Conn { reader, writer } = conn;
     let mut reader = reader;
     let (mut writer_tx, mut writer_error_rx) = spawn_writer(writer);
+    let mut translated_frames = std::collections::VecDeque::new();
     loop {
-        let raw = if let Some(raw) = deferred_login.take() {
+        let queued = translated_frames.pop_front();
+        let needs_translation = queued.is_none();
+        let raw = if let Some(raw) = queued {
+            Ok(raw)
+        } else if let Some(raw) = deferred_login.take() {
             Ok(raw)
         } else {
             tokio::select! {
@@ -1208,12 +1213,20 @@ async fn game_loop(
                 continue;
             }
         };
-        let raw = match translation {
-            Some(t) => match t.translate_game_frame(raw) {
-                Some(raw) => raw,
-                None => continue,
-            },
-            None => raw,
+        let raw = if needs_translation {
+            match translation {
+                Some(t) => {
+                    let mut frames = t.translate_game_frames(raw).into_iter();
+                    let Some(first) = frames.next() else {
+                        continue;
+                    };
+                    translated_frames.extend(frames);
+                    first
+                }
+                None => raw,
+            }
+        } else {
+            raw
         };
         if handle_raw_game_packet(&raw, event_tx) {
             continue;

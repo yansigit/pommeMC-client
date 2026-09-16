@@ -376,6 +376,15 @@ pub enum NetworkEvent {
         max_speed: f32,
         count: u32,
     },
+    /// Current explosion packet after any wire-version translation. The raw
+    /// handler owns this because Azalea's pinned particle enum does not match
+    /// the 26.2 particle registry ids.
+    Explosion {
+        center: DVec3,
+        radius: f32,
+        knockback: Option<DVec3>,
+        large_particle: bool,
+    },
     EntitiesRemoved {
         ids: Vec<i32>,
     },
