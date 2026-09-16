@@ -19,6 +19,10 @@ pub const SHORT_RUMBLE_TIME: u32 = 5;
 #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {
+    MoveForward,
+    MoveBackward,
+    MoveLeft,
+    MoveRight,
     Jump,
     Sneak,
     Sprint,
@@ -402,6 +406,30 @@ impl InputState {
             return true;
         }
         match action {
+            Action::MoveForward => {
+                self.key_pressed(KeyCode::KeyW)
+                    || self
+                        .get_gamepad_left_analog()
+                        .is_some_and(|axis| axis.y > STICK_MOVEMENT_THRESHOLD)
+            }
+            Action::MoveBackward => {
+                self.key_pressed(KeyCode::KeyS)
+                    || self
+                        .get_gamepad_left_analog()
+                        .is_some_and(|axis| axis.y < -STICK_MOVEMENT_THRESHOLD)
+            }
+            Action::MoveLeft => {
+                self.key_pressed(KeyCode::KeyA)
+                    || self
+                        .get_gamepad_left_analog()
+                        .is_some_and(|axis| axis.x < -STICK_MOVEMENT_THRESHOLD)
+            }
+            Action::MoveRight => {
+                self.key_pressed(KeyCode::KeyD)
+                    || self
+                        .get_gamepad_left_analog()
+                        .is_some_and(|axis| axis.x > STICK_MOVEMENT_THRESHOLD)
+            }
             Action::Jump => {
                 self.key_pressed(KeyCode::Space) || self.gamepad_button_down(Button::South)
             }

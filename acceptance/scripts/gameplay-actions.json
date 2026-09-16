@@ -1,0 +1,79 @@
+{
+  "schema": 1,
+  "steps": [
+    {
+      "type": "wait_phase",
+      "phase": "in_game",
+      "timeout_frames": 2400
+    },
+    {
+      "type": "press",
+      "action": "toggle_inventory"
+    },
+    {
+      "type": "wait_frames",
+      "frames": 1
+    },
+    {
+      "type": "assert",
+      "condition": "inventory_open",
+      "equals": true
+    },
+    {
+      "type": "release",
+      "action": "toggle_inventory"
+    },
+    {
+      "type": "wait_frames",
+      "frames": 1
+    },
+    {
+      "type": "press",
+      "action": "toggle_inventory"
+    },
+    {
+      "type": "wait_frames",
+      "frames": 1
+    },
+    {
+      "type": "assert",
+      "condition": "inventory_open",
+      "equals": false
+    },
+    {
+      "type": "release",
+      "action": "toggle_inventory"
+    },
+    {
+      "type": "wait_frames",
+      "frames": 30
+    },
+    {
+      "type": "capture_position"
+    },
+    {
+      "type": "press",
+      "action": "move_forward"
+    },
+    {
+      "type": "wait_frames",
+      "frames": 180
+    },
+    {
+      "type": "release",
+      "action": "move_forward"
+    },
+    {
+      "type": "wait_frames",
+      "frames": 5
+    },
+    {
+      "type": "assert_position_delta",
+      "min": [-0.75, -1.0, 0.5],
+      "max": [0.75, 1.0, 8.0]
+    },
+    {
+      "type": "exit"
+    }
+  ]
+}

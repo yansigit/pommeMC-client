@@ -2,7 +2,6 @@
 // server-authoritative until the client has a local damage event pipeline.
 
 use glam::{DVec3, dvec3};
-use winit::keyboard::KeyCode;
 
 use super::aabb::Aabb;
 use super::collision::{no_collision, resolve_collision};
@@ -69,11 +68,7 @@ pub fn tick(
         forward * use_speed_multiplier,
         strafe * use_speed_multiplier,
     );
-    let forward_pressed = input.key_pressed(KeyCode::KeyW)
-        || input
-            .get_gamepad_left_analog()
-            .map(|vec| vec.y > input::STICK_MOVEMENT_THRESHOLD)
-            .unwrap_or(false);
+    let forward_pressed = input.performing_action(input::Action::MoveForward);
 
     update_sprint_state(
         player,
@@ -766,16 +761,16 @@ fn movement_input(input: &InputState, crouching: bool, sneaking_speed: f64) -> (
         forward = analog_input.y as f64;
         strafe = analog_input.x as f64;
     } else {
-        if input.key_pressed(KeyCode::KeyW) {
+        if input.performing_action(input::Action::MoveForward) {
             forward += 1.0;
         }
-        if input.key_pressed(KeyCode::KeyS) {
+        if input.performing_action(input::Action::MoveBackward) {
             forward -= 1.0;
         }
-        if input.key_pressed(KeyCode::KeyA) {
+        if input.performing_action(input::Action::MoveLeft) {
             strafe -= 1.0;
         }
-        if input.key_pressed(KeyCode::KeyD) {
+        if input.performing_action(input::Action::MoveRight) {
             strafe += 1.0;
         }
     }

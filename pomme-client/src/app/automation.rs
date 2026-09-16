@@ -35,6 +35,11 @@ enum Step {
         condition: Condition,
         equals: bool,
     },
+    CapturePosition,
+    AssertPositionDelta {
+        min: [f64; 3],
+        max: [f64; 3],
+    },
     Exit,
 }
 
@@ -78,6 +83,7 @@ struct ObservedState {
     inventory_open: bool,
     paused: bool,
     chat_open: bool,
+    position: Option<[f64; 3]>,
 }
 
 impl ObservedState {
@@ -91,6 +97,11 @@ impl ObservedState {
                 inventory_open: game.inventory_open || game.creative_inventory_open,
                 paused: game.paused,
                 chat_open: game.chat.is_open(),
+                position: Some([
+                    game.player.position.x,
+                    game.player.position.y,
+                    game.player.position.z,
+                ]),
             },
         }
     }
@@ -101,6 +112,7 @@ impl ObservedState {
             inventory_open: false,
             paused: false,
             chat_open: false,
+            position: None,
         }
     }
 
@@ -121,6 +133,7 @@ pub struct Automation {
     frame: u64,
     wait_frames_remaining: Option<u32>,
     phase_wait_frames: u32,
+    position_anchor: Option<[f64; 3]>,
     events: Vec<TraceEvent>,
     exit_requested: bool,
     failure: Option<String>,
@@ -155,6 +168,7 @@ impl Automation {
             frame: 0,
             wait_frames_remaining: None,
             phase_wait_frames: 0,
+            position_anchor: None,
             events: Vec::new(),
             exit_requested: false,
             failure: None,
@@ -233,6 +247,38 @@ impl Automation {
                     self.record(format!("assert={condition:?}:{actual}"));
                     self.step += 1;
                 }
+                Step::CapturePosition => {
+                    let Some(position) = observed.position else {
+                        self.fail(format!(
+                            "step {} cannot capture position outside the in-game phase",
+                            self.step
+                        ));
+                        return;
+                    };
+                    self.position_anchor = Some(position);
+                    self.record(format!("position_anchor={position:?}"));
+                    self.step += 1;
+                }
+                Step::AssertPositionDelta { min, max } => {
+                    let (Some(anchor), Some(position)) = (self.position_anchor, observed.position)
+                    else {
+                        self.fail(format!(
+                            "step {} requires an in-game position and a captured anchor",
+                            self.step
+                        ));
+                        return;
+                    };
+                    let delta = std::array::from_fn(|axis| position[axis] - anchor[axis]);
+                    if !position_delta_within(delta, *min, *max) {
+                        self.fail(format!(
+                            "step {} position delta {delta:?} was outside {min:?}..={max:?}",
+                            self.step
+                        ));
+                        return;
+                    }
+                    self.record(format!("assert_position_delta={delta:?}"));
+                    self.step += 1;
+                }
                 Step::Exit => {
                     self.record("exit".to_owned());
                     self.step += 1;
@@ -307,6 +353,16 @@ impl Automation {
     }
 }
 
+fn position_delta_within(delta: [f64; 3], min: [f64; 3], max: [f64; 3]) -> bool {
+    (0..3).all(|axis| {
+        min[axis].is_finite()
+            && max[axis].is_finite()
+            && min[axis] <= max[axis]
+            && delta[axis] >= min[axis]
+            && delta[axis] <= max[axis]
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -350,5 +406,24 @@ mod tests {
                 .unwrap()
                 .contains("assertion failed")
         );
+    }
+
+    #[test]
+    fn position_delta_requires_each_axis_inside_the_inclusive_bounds() {
+        assert!(position_delta_within(
+            [0.25, -0.5, 2.0],
+            [-1.0, -1.0, 1.0],
+            [1.0, 1.0, 3.0]
+        ));
+        assert!(!position_delta_within(
+            [0.25, -0.5, 4.0],
+            [-1.0, -1.0, 1.0],
+            [1.0, 1.0, 3.0]
+        ));
+        assert!(!position_delta_within(
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0]
+        ));
     }
 }

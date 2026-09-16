@@ -94,7 +94,7 @@
     },
     {
       "id": "integrated-gameplay-render",
-      "description": "Launch SteelMC in-process, join through the client, render gameplay, and shut down cleanly",
+      "description": "Launch SteelMC in-process, join through the client, exercise inventory and movement, render gameplay, and shut down cleanly",
       "protocol": "26.2 (776)",
       "server_fixture": "steelmc-copper-golem-showcase",
       "fixture_hash": "${GIT_HEAD}",
@@ -112,7 +112,7 @@
         "--showcase-copper-golem-statues",
         "--capture-gameplay-frame",
         "--automation-script",
-        "${REPO_ROOT}/acceptance/scripts/inventory-toggle.json",
+        "${REPO_ROOT}/acceptance/scripts/gameplay-actions.json",
         "--automation-trace",
         "${RUN_DIR}/automation-trace.json"
       ],

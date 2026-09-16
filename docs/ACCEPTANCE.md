@@ -20,9 +20,11 @@ record, logs, and validated JSON or PNG evidence under
 `target/acceptance/<run-id>`.
 
 The integrated gameplay scenario also runs
-`acceptance/scripts/inventory-toggle.json`. It waits for the real `InGame`
-phase, opens and closes the inventory through the normal `Action`/`InputState`
-path, asserts both visible states, and retains the frame-by-frame action trace.
+`acceptance/scripts/gameplay-actions.json`. It waits for the real `InGame`
+phase, opens and closes the inventory, captures the server-provided player
+position, holds the normal forward action, and verifies bounded forward movement.
+All input flows through `Action`/`InputState`, and the retained frame-by-frame
+trace records both UI and world-position assertions.
 
 `native-secure-chat` independently rebuilds the protocol 776 signable payload,
 verifies the RSA-SHA256 signature as a strict server would, checks the 1.21.5+
