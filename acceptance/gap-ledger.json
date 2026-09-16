@@ -802,8 +802,12 @@
       "occurrence": 0,
       "wave": "4",
       "area": "gameplay-state-and-physics",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "Charged PIERCING_WEAPON attacks now send vanilla 26.2's STAB player action before target dispatch, reset only the attack cooldown, play the component's optional player sound, and swing",
+        "Held piercing weapons no longer fall through into continuous block mining",
+        "Raw wire-layout and real default-component tests cover STAB action 7, full-charge gating, and spear-versus-normal-item branch selection"
+      ]
     },
     {
       "id": "marker-7d84b979f167",

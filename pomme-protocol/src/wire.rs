@@ -36,6 +36,19 @@ pub fn encode_attack(entity_id: i32) -> Vec<u8> {
     buf
 }
 
+/// Vanilla 26.2 `ServerboundPlayerActionPacket(Action.STAB, ZERO, DOWN, 0)`.
+/// Azalea's action enum predates STAB, so encode the modern action ordinal
+/// directly through Pomme's raw outbound path.
+pub fn encode_stab() -> Vec<u8> {
+    let mut buf = Vec::new();
+    write_varint(&mut buf, game_serverbound_id("player_action"));
+    write_varint(&mut buf, 7); // Action.STAB
+    buf.extend_from_slice(&0i64.to_be_bytes()); // BlockPos.ZERO
+    buf.push(0); // Direction.DOWN
+    write_varint(&mut buf, 0); // sequence
+    buf
+}
+
 /// Vanilla 26.2 `ServerboundPickItemFromBlockPacket`: packed BlockPos then
 /// whether Ctrl requested block-entity/component data.
 pub fn encode_pick_item_from_block(x: i32, y: i32, z: i32, include_data: bool) -> Vec<u8> {
@@ -173,6 +186,11 @@ mod tests {
     fn attack_packet_layout() {
         // id 0x01, entity id 42.
         assert_eq!(encode_attack(42), [0x01, 42]);
+    }
+
+    #[test]
+    fn stab_packet_layout() {
+        assert_eq!(encode_stab(), [0x29, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     }
 
     #[test]

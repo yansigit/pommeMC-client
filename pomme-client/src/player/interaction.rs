@@ -8,7 +8,7 @@ use azalea_entity::dimensions::EntityDimensions;
 use azalea_inventory::ItemStackData;
 use azalea_inventory::components::{
     AttributeModifiers, Consumable, EquipmentSlotGroup, Food, ItemUseAnimation,
-    MinimumAttackCharge, Tool, ToolRule, UseEffects,
+    MinimumAttackCharge, PiercingWeapon, Tool, ToolRule, UseEffects,
 };
 use azalea_inventory::default_components::{DefaultableComponent, get_default_component};
 use azalea_protocol::packets::game::ServerboundGamePacket;
@@ -561,9 +561,27 @@ impl InteractionState {
             return;
         }
 
-        // TODO: full-charge spears take vanilla's PIERCING_WEAPON branch
-        // instead of the plain entity/block dispatch.
         if self.cannot_attack_with_item(held_stack) {
+            return;
+        }
+
+        // Vanilla `Minecraft.startAttack` dispatches PIERCING_WEAPON before
+        // examining the crosshair target. The server traces every entity along
+        // the weapon's attack range from this single STAB action.
+        if let Some(weapon) = held_stack.and_then(stack_component::<PiercingWeapon>) {
+            sender.send_raw(wire::encode_stab());
+            self.attack_strength_ticker = 0;
+            if let Some(sound) = &weapon.sound {
+                audio.play_world_sound(
+                    &SoundRef::resolve(sound),
+                    CATEGORY_PLAYERS,
+                    Position::new(player_pos.x, player_pos.y, player_pos.z),
+                    1.0,
+                    1.0,
+                    fastrand::u64(..),
+                );
+            }
+            self.swing(sender);
             return;
         }
 
@@ -624,6 +642,15 @@ impl InteractionState {
         dirty_chunks: &mut Vec<BlockPos>,
     ) {
         if self.miss_time > 0 {
+            return;
+        }
+
+        // Holding attack with a spear never falls through into block mining;
+        // each accepted click is a discrete STAB handled by `start_attack`.
+        if held_stack
+            .and_then(stack_component::<PiercingWeapon>)
+            .is_some()
+        {
             return;
         }
 
@@ -1868,6 +1895,20 @@ mod tests {
             rx.try_recv(),
             Err(tokio::sync::mpsc::error::TryRecvError::Empty)
         ));
+    }
+
+    #[test]
+    fn spear_defaults_require_full_charge_and_select_piercing_attack() {
+        let spear = ItemStackData::new(ItemKind::CopperSpear, 1);
+        let stone = ItemStackData::new(ItemKind::Stone, 1);
+        let mut state = InteractionState::new();
+
+        assert!(stack_component::<PiercingWeapon>(&spear).is_some());
+        assert!(stack_component::<PiercingWeapon>(&stone).is_none());
+        assert!(state.cannot_attack_with_item(Some(&spear)));
+
+        state.attack_strength_ticker = attack_strength_delay(Some(&spear)).ceil() as u32;
+        assert!(!state.cannot_attack_with_item(Some(&spear)));
     }
 
     #[test]
