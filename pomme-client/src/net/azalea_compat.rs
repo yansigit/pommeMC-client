@@ -841,6 +841,21 @@ fn suppress_unknown_outbound_774() {
     );
 }
 
+#[test]
+fn suppress_pick_item_below_769() {
+    let mut frame = Vec::new();
+    wire::write_varint(
+        &mut frame,
+        table_id(Direction::Serverbound, "pick_item_from_block"),
+    );
+    frame.extend_from_slice(&[0; 9]);
+    assert!(
+        translation_for(768)
+            .translate_outbound_game_frame(frame)
+            .is_empty()
+    );
+}
+
 /// Outbound frames whose layout didn't change get the id remap only
 /// (`swing` is 60 on 1.21.11, 63 on 26.2).
 #[test]

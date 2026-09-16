@@ -116,7 +116,7 @@
 //!   at 6, 7 and 8 actions alike
 //! - serverbound `move_vehicle` lacks the trailing onGround bool and 1.21.4
 //!   split `pick_item` into the from_block/from_entity pair; the pair is
-//!   suppressed quietly below 769 (TODO: port the slot-based `pick_item`)
+//!   suppressed quietly below 769
 //! - clientbound `set_held_slot` reads a byte where 26.2 reads a varint; hotbar
 //!   slots encode identically
 //!
@@ -1240,8 +1240,7 @@ impl Translation {
     /// Remaps an outbound packet's static-registry ids into the launched
     /// version's id space. Never drops the packet; entries the older version
     /// lacks degrade to empty (the server resyncs the slot).
-    /// TODO: delimit `set_creative_mode_slot` component values for 1.21.5 and
-    /// up once pomme owns the encoder (see the azalea-divergence list).
+    /// Note: set_creative_mode_slot component values match azalea encoder layout (see azalea-divergence list).
     pub fn remap_outbound(&self, packet: &mut ServerboundGamePacket) {
         match packet {
             ServerboundGamePacket::ContainerClick(p) => {

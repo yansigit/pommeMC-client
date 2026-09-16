@@ -610,8 +610,11 @@
       "occurrence": 0,
       "wave": "2-3",
       "area": "protocol-compatibility",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "Outbound pick_item_from_block and pick_item_from_entity are quietly suppressed on protocols below 769 via quiet_suppressed",
+        "suppress_pick_item_below_769 verifies that pick_item_from_block is suppressed on protocol 768 without panicking"
+      ]
     },
     {
       "id": "marker-a08ca2ba53f5",
@@ -660,8 +663,11 @@
       "occurrence": 0,
       "wave": "2-3",
       "area": "protocol-compatibility",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "Outbound set_creative_mode_slot component values match azalea encoder layout, documented in azalea-divergence list",
+        "translate_creative_slot_765 verifies creative slot outbound translation on legacy wire versions"
+      ]
     },
     {
       "id": "marker-bcfe98263e4b",
