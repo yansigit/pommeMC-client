@@ -579,8 +579,11 @@
       "occurrence": 0,
       "wave": "2-3",
       "area": "protocol-compatibility",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "ClientboundGamePacket::EntityEvent with event_id 60 emits NetworkEvent::EntityPoof to trigger particle spawning",
+        "entity_event_60_emits_poof verifies event 60 maps to EntityPoof with the target entity id"
+      ]
     },
     {
       "id": "marker-1888576ecc64",

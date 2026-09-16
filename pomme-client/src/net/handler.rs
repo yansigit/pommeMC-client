@@ -871,9 +871,12 @@ pub fn handle_game_packet(
             }
         }
         // Event id 3 = living entity death.
-        // TODO: event 60 (`makePoofParticles`) when a mob's death clock hits 20.
         ClientboundGamePacket::EntityEvent(p) if p.event_id == 3 => {
             let _ = event_tx.try_send(NetworkEvent::EntityDied { id: p.entity_id.0 });
+        }
+        // Event id 60 = mob death poof particles (vanilla `makePoofParticles`).
+        ClientboundGamePacket::EntityEvent(p) if p.event_id == 60 => {
+            let _ = event_tx.try_send(NetworkEvent::EntityPoof { id: p.entity_id.0 });
         }
         // Event id 9 = finished using an item (vanilla `completeUsingItem`).
         ClientboundGamePacket::EntityEvent(p) if p.event_id == 9 => {
@@ -1801,6 +1804,33 @@ mod tests {
                 assert_eq!(sound_id.as_deref(), Some("minecraft:test.ui"));
             }
             _ => panic!("expected StopSound"),
+        }
+    }
+
+    #[test]
+    fn entity_event_60_emits_poof() {
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let sender = PacketSender::new(out_tx);
+        let (event_tx, event_rx) = crossbeam_channel::bounded(1);
+        let registries = RegistryHolder::default();
+        let command_tree = std::sync::Arc::new(parking_lot::Mutex::new(None));
+        handle_game_packet(
+            &ClientboundGamePacket::EntityEvent(
+                azalea_protocol::packets::game::c_entity_event::ClientboundEntityEvent {
+                    entity_id: azalea_core::entity_id::MinecraftEntityId(42),
+                    event_id: 60,
+                },
+            ),
+            &sender,
+            &event_tx,
+            &registries,
+            &command_tree,
+        );
+        match event_rx.recv().unwrap() {
+            NetworkEvent::EntityPoof { id } => {
+                assert_eq!(id, 42);
+            }
+            _ => panic!("expected EntityPoof"),
         }
     }
 }

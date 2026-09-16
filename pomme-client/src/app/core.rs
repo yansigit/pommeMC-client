@@ -1741,6 +1741,11 @@ impl AppCore {
                     }
                     game.entity_store.mark_dead(id);
                 }
+                NetworkEvent::EntityPoof { id } => {
+                    if let Some(pos) = game.entity_positions.get(&id) {
+                        game.particle_store.add_poof(dvec3(pos.x, pos.y, pos.z), 0.8, 1.8);
+                    }
+                }
                 NetworkEvent::ItemPickedUp {
                     item_id,
                     collector_id,

@@ -524,6 +524,24 @@ impl ParticleStore {
         }
     }
 
+    /// Vanilla `LivingEntity.makePoofParticles`: 20 particles spawned in the
+    /// entity volume with random scatter.
+    pub fn add_poof(&mut self, pos: DVec3, width: f32, height: f32) {
+        for _ in 0..20 {
+            let offset = dvec3(
+                (fastrand::f64() - 0.5) * f64::from(width),
+                fastrand::f64() * f64::from(height),
+                (fastrand::f64() - 0.5) * f64::from(width),
+            );
+            let size = 0.5 + fastrand::f32() * 0.5;
+            self.push(Particle::explosion(
+                pos + offset,
+                size,
+                &self.explosion_frames,
+            ));
+        }
+    }
+
     /// Vanilla `ClientPacketListener.handleParticleEvent`: count 0 is a
     /// single directional particle (velocity = dist * max_speed), otherwise a
     /// gaussian scatter of `count` particles around the position.

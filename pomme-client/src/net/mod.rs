@@ -478,6 +478,9 @@ pub enum NetworkEvent {
     EntityDied {
         id: i32,
     },
+    EntityPoof {
+        id: i32,
+    },
     HurtAnimation {
         id: i32,
         yaw: f32,
