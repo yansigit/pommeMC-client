@@ -1867,9 +1867,10 @@ mod tests {
             let mut dimension = false;
             let mut chunk = false;
             let mut position = false;
+            let mut abilities = false;
             let mut trace = vec![format!("protocol={}", LATEST.protocol)];
             tokio::time::timeout(Duration::from_secs(60), async {
-                while !(connected && player_login && dimension && chunk && position) {
+                while !(connected && player_login && dimension && chunk && position && abilities) {
                     while let Ok(event) = connection.event_rx.try_recv() {
                         match event {
                             NetworkEvent::Connected => {
@@ -1891,6 +1892,23 @@ mod tests {
                             NetworkEvent::PlayerPosition { .. } => {
                                 trace.push("PlayerPosition".into());
                                 position = true;
+                            }
+                            NetworkEvent::PlayerAbilitiesChanged {
+                                invulnerable,
+                                flying,
+                                can_fly,
+                                instabuild,
+                                flying_speed,
+                                walking_speed,
+                            } => {
+                                assert!(!invulnerable, "survival fixture must be vulnerable");
+                                assert!(!flying, "survival fixture must not start flying");
+                                assert!(!can_fly, "survival fixture must not grant flight");
+                                assert!(!instabuild, "survival fixture must not grant instabuild");
+                                assert!(flying_speed > 0.0, "flying speed must be positive");
+                                assert!(walking_speed > 0.0, "walking speed must be positive");
+                                trace.push("PlayerAbilities".into());
+                                abilities = true;
                             }
                             NetworkEvent::Disconnected { reason } => {
                                 panic!(
@@ -1916,6 +1934,7 @@ mod tests {
             assert!(dimension, "client never emitted DimensionInfo");
             assert!(chunk, "client never emitted ChunkLoaded");
             assert!(position, "client never emitted PlayerPosition");
+            assert!(abilities, "client never emitted PlayerAbilitiesChanged");
 
             connection
                 .packet_tx

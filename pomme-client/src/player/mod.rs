@@ -64,9 +64,15 @@ pub struct LocalPlayer {
     pub inventory: Inventory,
     pub sprinting: bool,
     pub crouching: bool,
-    // TODO: remaining Abilities fields - invulnerable, instabuild, may_build
     pub flying: bool,
     pub may_fly: bool,
+    /// Vanilla `Abilities.invulnerable`, authoritative from game mode and the
+    /// clientbound abilities packet.
+    pub invulnerable: bool,
+    /// Vanilla `Abilities.instabuild` (`instant_break` on the wire).
+    pub instabuild: bool,
+    /// Vanilla `Abilities.mayBuild`; false in adventure and spectator.
+    pub may_build: bool,
     pub fly_speed: f32,
     pub walk_speed: f32,
     pub jump_trigger_time: u32,
@@ -136,6 +142,9 @@ impl LocalPlayer {
             crouching: false,
             flying: false,
             may_fly: false,
+            invulnerable: false,
+            instabuild: false,
+            may_build: true,
             fly_speed: 0.05,
             walk_speed: 0.1,
             jump_trigger_time: 0,
@@ -171,6 +180,61 @@ impl LocalPlayer {
         }
     }
 
+    /// Vanilla `GameType.updatePlayerAbilities`. Packet updates may refine the
+    /// first four fields afterwards, while `may_build` remains game-mode-owned.
+    pub fn apply_game_mode_abilities(&mut self, game_mode: u8) {
+        match game_mode {
+            1 => {
+                self.invulnerable = true;
+                self.may_fly = true;
+                self.instabuild = true;
+                self.may_build = true;
+                // Creative preserves the current flying toggle.
+            }
+            3 => {
+                self.invulnerable = true;
+                self.flying = true;
+                self.may_fly = true;
+                self.instabuild = false;
+                self.may_build = false;
+            }
+            2 => {
+                self.invulnerable = false;
+                self.flying = false;
+                self.may_fly = false;
+                self.instabuild = false;
+                self.may_build = false;
+            }
+            _ => {
+                self.invulnerable = false;
+                self.flying = false;
+                self.may_fly = false;
+                self.instabuild = false;
+                self.may_build = true;
+            }
+        }
+    }
+
+    /// Applies the complete clientbound abilities snapshot. Keeping this in
+    /// `LocalPlayer` gives packet handling and gameplay one authoritative
+    /// mapping for the six wire values.
+    pub fn apply_server_abilities(
+        &mut self,
+        invulnerable: bool,
+        flying: bool,
+        can_fly: bool,
+        instabuild: bool,
+        flying_speed: f32,
+        walking_speed: f32,
+    ) {
+        self.invulnerable = invulnerable;
+        self.flying = flying;
+        self.may_fly = can_fly;
+        self.instabuild = instabuild;
+        self.fly_speed = flying_speed;
+        self.walk_speed = walking_speed;
+    }
+
     pub fn reset_death_time(&mut self) {
         self.death_time = 0;
     }
@@ -201,6 +265,9 @@ impl LocalPlayer {
         self.experience_progress = 0.0;
         self.flying = false;
         self.may_fly = false;
+        self.invulnerable = false;
+        self.instabuild = false;
+        self.may_build = true;
         self.fly_speed = 0.05;
         self.walk_speed = 0.1;
         self.jump_trigger_time = 0;
@@ -489,6 +556,54 @@ impl LocalPlayer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn game_modes_apply_the_complete_vanilla_ability_set() {
+        let mut player = LocalPlayer::new();
+
+        player.flying = true;
+        player.apply_game_mode_abilities(1);
+        assert!(player.invulnerable);
+        assert!(player.flying, "creative preserves the flight toggle");
+        assert!(player.may_fly);
+        assert!(player.instabuild);
+        assert!(player.may_build);
+
+        player.apply_game_mode_abilities(2);
+        assert!(!player.invulnerable);
+        assert!(!player.flying);
+        assert!(!player.may_fly);
+        assert!(!player.instabuild);
+        assert!(!player.may_build);
+
+        player.apply_game_mode_abilities(3);
+        assert!(player.invulnerable);
+        assert!(player.flying);
+        assert!(player.may_fly);
+        assert!(!player.instabuild);
+        assert!(!player.may_build);
+
+        player.apply_game_mode_abilities(0);
+        assert!(!player.invulnerable);
+        assert!(!player.flying);
+        assert!(!player.may_fly);
+        assert!(!player.instabuild);
+        assert!(player.may_build);
+    }
+
+    #[test]
+    fn server_snapshot_applies_every_wire_ability() {
+        let mut player = LocalPlayer::new();
+
+        player.apply_server_abilities(true, true, true, true, 0.075, 0.125);
+
+        assert!(player.invulnerable);
+        assert!(player.flying);
+        assert!(player.may_fly);
+        assert!(player.instabuild);
+        assert_eq!(player.fly_speed, 0.075);
+        assert_eq!(player.walk_speed, 0.125);
+    }
 
     #[test]
     fn local_player_is_removed_at_vanilla_death_tick() {

@@ -51,8 +51,12 @@
       "wave": "4",
       "area": "state",
       "requirement": "Central abilities, attributes, effects, pose, equipment, and passenger state",
-      "status": "open",
-      "evidence": []
+      "status": "in_progress",
+      "evidence": [
+        "pomme-client/src/player/mod.rs: LocalPlayer centrally owns and applies all clientbound and game-mode ability fields",
+        "pomme-client/src/net/handler.rs player_abilities_emit_every_authoritative_wire_flag: all six packet values cross the network boundary",
+        "pomme-client/src/net/connection.rs integrated_server_acceptance_reaches_gameplay: integrated SteelMC survival abilities observed through the public connection event stream"
+      ]
     },
     {
       "id": "generated-block-shapes",
@@ -176,8 +180,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "LocalPlayer::apply_game_mode_abilities now applies invulnerable, instabuild, may_build, flying, and may_fly for all four game modes",
+        "LocalPlayer::apply_server_abilities is the central packet snapshot application path"
+      ]
     },
     {
       "id": "marker-1a044b174299",
@@ -517,8 +524,11 @@
       "occurrence": 0,
       "wave": "2-3",
       "area": "protocol-compatibility",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "Clientbound PlayerAbilities now emits invulnerable and instant_break as NetworkEvent fields",
+        "player_abilities_emit_every_authoritative_wire_flag verifies every flag and speed"
+      ]
     },
     {
       "id": "marker-459a3b42a0f9",
@@ -814,8 +824,11 @@
       "occurrence": 0,
       "wave": "4",
       "area": "gameplay-state-and-physics",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "LocalPlayer now stores invulnerable, instabuild, and may_build alongside flying and may_fly",
+        "game_modes_apply_the_complete_vanilla_ability_set and server_snapshot_applies_every_wire_ability cover both authoritative update paths"
+      ]
     },
     {
       "id": "marker-646ed9a514aa",

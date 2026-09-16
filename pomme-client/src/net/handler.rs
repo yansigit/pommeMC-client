@@ -310,10 +310,11 @@ pub fn handle_game_packet(
             }
         }
         ClientboundGamePacket::PlayerAbilities(p) => {
-            // TODO: invulnerable and instant_break flags
             let _ = event_tx.try_send(NetworkEvent::PlayerAbilitiesChanged {
+                invulnerable: p.flags.invulnerable,
                 flying: p.flags.flying,
                 can_fly: p.flags.can_fly,
+                instabuild: p.flags.instant_break,
                 flying_speed: p.flying_speed,
                 walking_speed: p.walking_speed,
             });
@@ -1498,6 +1499,45 @@ mod tests {
     use pomme_protocol::wire;
 
     use super::*;
+
+    #[test]
+    fn player_abilities_emit_every_authoritative_wire_flag() {
+        use azalea_protocol::packets::game::c_player_abilities::{
+            ClientboundPlayerAbilities, PlayerAbilitiesFlags,
+        };
+
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let sender = PacketSender::new(out_tx);
+        let (event_tx, event_rx) = crossbeam_channel::bounded(1);
+        handle_game_packet(
+            &ClientboundGamePacket::PlayerAbilities(ClientboundPlayerAbilities {
+                flags: PlayerAbilitiesFlags {
+                    invulnerable: true,
+                    flying: false,
+                    can_fly: true,
+                    instant_break: true,
+                },
+                flying_speed: 0.075,
+                walking_speed: 0.125,
+            }),
+            &sender,
+            &event_tx,
+            &RegistryHolder::default(),
+            &Arc::new(Mutex::new(None)),
+        );
+
+        assert!(matches!(
+            event_rx.recv().unwrap(),
+            NetworkEvent::PlayerAbilitiesChanged {
+                invulnerable: true,
+                flying: false,
+                can_fly: true,
+                instabuild: true,
+                flying_speed,
+                walking_speed,
+            } if flying_speed == 0.075 && walking_speed == 0.125
+        ));
+    }
 
     #[test]
     fn set_held_slot_emits_authoritative_hotbar_selection() {

@@ -298,8 +298,10 @@ pub enum NetworkEvent {
         name: String,
     },
     PlayerAbilitiesChanged {
+        invulnerable: bool,
         flying: bool,
         can_fly: bool,
+        instabuild: bool,
         flying_speed: f32,
         walking_speed: f32,
     },

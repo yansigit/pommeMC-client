@@ -355,7 +355,8 @@ impl InteractionState {
         eye_pos: DVec3,
         look: LookDirection,
         on_ground: bool,
-        creative: bool,
+        instabuild: bool,
+        invulnerable: bool,
         mob_effects: &ActiveMobEffects,
         food: u32,
         selected_slot: u8,
@@ -396,7 +397,7 @@ impl InteractionState {
                 input,
                 player_pos,
                 on_ground,
-                creative,
+                instabuild,
                 mob_effects,
                 held_stack,
                 effects,
@@ -427,7 +428,7 @@ impl InteractionState {
                 place_block,
                 held_stack,
                 food,
-                creative,
+                invulnerable,
                 sneaking,
                 suppress_block_use,
                 effects,
@@ -456,7 +457,7 @@ impl InteractionState {
                     audio,
                     player_pos,
                     on_ground,
-                    creative,
+                    instabuild,
                     mob_effects,
                     held_stack,
                     effects,
@@ -550,7 +551,7 @@ impl InteractionState {
         input: &InputState,
         player_pos: DVec3,
         on_ground: bool,
-        creative: bool,
+        instabuild: bool,
         mob_effects: &ActiveMobEffects,
         held_stack: Option<&ItemStackData>,
         effects: &mut BreakEffects,
@@ -599,7 +600,7 @@ impl InteractionState {
             audio,
             player_pos,
             on_ground,
-            creative,
+            instabuild,
             mob_effects,
             held_stack,
             effects,
@@ -616,7 +617,7 @@ impl InteractionState {
         audio: &AudioEngine,
         player_pos: DVec3,
         on_ground: bool,
-        creative: bool,
+        instabuild: bool,
         mob_effects: &ActiveMobEffects,
         held_stack: Option<&ItemStackData>,
         effects: &mut BreakEffects,
@@ -646,7 +647,7 @@ impl InteractionState {
             audio,
             player_pos,
             on_ground,
-            creative,
+            instabuild,
             mob_effects,
             held_stack,
             effects,
@@ -670,7 +671,7 @@ impl InteractionState {
         place_block: Option<BlockState>,
         held_stack: Option<&ItemStackData>,
         food: u32,
-        creative: bool,
+        invulnerable: bool,
         sneaking: bool,
         suppress_block_use: bool,
         effects: &mut BreakEffects,
@@ -734,7 +735,16 @@ impl InteractionState {
         // A non-block item passes the block interaction, so vanilla falls
         // through to `useItem` (this is how eating at the ground works).
         self.use_item(
-            sender, audio, chunks, player_pos, eye_pos, look, held_stack, food, creative, effects,
+            sender,
+            audio,
+            chunks,
+            player_pos,
+            eye_pos,
+            look,
+            held_stack,
+            food,
+            invulnerable,
+            effects,
         ) || hit_block
     }
 
@@ -753,7 +763,7 @@ impl InteractionState {
         look: LookDirection,
         held_stack: Option<&ItemStackData>,
         food: u32,
-        creative: bool,
+        invulnerable: bool,
         effects: &mut BreakEffects,
     ) -> bool {
         let Some(stack) = held_stack else {
@@ -772,10 +782,10 @@ impl InteractionState {
             return true;
         };
         // Vanilla `Consumable.canConsume` → `Player.canEat`: food needs
-        // hunger unless it can always be eaten; creative players (vanilla
-        // invulnerable) always can. Non-food consumables have no gate.
+        // hunger unless it can always be eaten; invulnerable players always
+        // can. Non-food consumables have no gate.
         if let Some(f) = stack_component::<Food>(stack)
-            && !(creative || f.can_always_eat || food < MAX_FOOD_LEVEL)
+            && !(invulnerable || f.can_always_eat || food < MAX_FOOD_LEVEL)
         {
             return true;
         }

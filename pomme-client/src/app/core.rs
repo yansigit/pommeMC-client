@@ -1326,21 +1326,7 @@ impl AppCore {
                         None => {}
                     }
                     game.player.game_mode = game_mode;
-                    // Vanilla GameType.updatePlayerAbilities, applied locally on
-                    // setLocalMode (no packet).
-                    // TODO: the instabuild/invulnerable/may_build halves
-                    match game_mode {
-                        // Creative grants flight but leaves `flying` untouched.
-                        1 => game.player.may_fly = true,
-                        3 => {
-                            game.player.may_fly = true;
-                            game.player.flying = true;
-                        }
-                        _ => {
-                            game.player.may_fly = false;
-                            game.player.flying = false;
-                        }
-                    }
+                    game.player.apply_game_mode_abilities(game_mode);
                     if game.inventory_open || game.creative_inventory_open {
                         match game_mode {
                             1 => {
@@ -1360,15 +1346,21 @@ impl AppCore {
                     }
                 }
                 NetworkEvent::PlayerAbilitiesChanged {
+                    invulnerable,
                     flying,
                     can_fly,
+                    instabuild,
                     flying_speed,
                     walking_speed,
                 } => {
-                    game.player.flying = flying;
-                    game.player.may_fly = can_fly;
-                    game.player.fly_speed = flying_speed;
-                    game.player.walk_speed = walking_speed;
+                    game.player.apply_server_abilities(
+                        invulnerable,
+                        flying,
+                        can_fly,
+                        instabuild,
+                        flying_speed,
+                        walking_speed,
+                    );
                 }
                 NetworkEvent::ServerViewDistance { distance } => {
                     tracing::info!("Server view distance: {distance}");
@@ -2189,10 +2181,16 @@ impl AppCore {
         );
 
         let held_stack = game.player.inventory.held_stack(input.selected_slot());
-        let place_block = held_stack.and_then(|data| {
-            let name = crate::player::inventory::item_resource_name(data.kind);
-            renderer.registry().placeable_block_for_item(&name)
-        });
+        let place_block = game
+            .player
+            .may_build
+            .then(|| {
+                held_stack.and_then(|data| {
+                    let name = crate::player::inventory::item_resource_name(data.kind);
+                    renderer.registry().placeable_block_for_item(&name)
+                })
+            })
+            .flatten();
         let hands_empty = held_stack.is_none() && game.player.inventory.offhand().is_empty();
 
         let dirty = game.interaction.tick(
@@ -2204,7 +2202,8 @@ impl AppCore {
             game.player.eye_pos().into(),
             game.player.look_dir,
             game.player.on_ground,
-            crate::player::is_creative(game.player.game_mode),
+            game.player.instabuild,
+            game.player.invulnerable,
             &game.player.effects,
             game.player.food,
             input.selected_slot(),
