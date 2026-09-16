@@ -817,8 +817,12 @@
       "occurrence": 0,
       "wave": "4",
       "area": "gameplay-state-and-physics",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "Entity ray hits now retain the target type so right-click prediction can distinguish entity food from unrelated player consumables",
+        "Vanilla 26.2 consumable members of animal food tags consume the entity interaction, while unrelated consumables send both InteractAt and UseItem and begin normal local use",
+        "Focused tests cover steak-on-cow fallthrough plus pig, wolf, horse, parrot, armadillo, and nautilus consuming cases using public 26.2 source and misode/mcmeta tag data"
+      ]
     },
     {
       "id": "marker-bb4847d389a6",

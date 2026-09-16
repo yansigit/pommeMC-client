@@ -71,6 +71,7 @@ pub struct BlockHitResult {
 #[derive(Debug, Clone, Copy)]
 pub struct EntityHitResult {
     pub entity_id: i32,
+    pub entity_type: EntityKind,
     pub location: DVec3,
     pub entity_pos: DVec3,
 }
@@ -711,17 +712,35 @@ impl InteractionState {
         self.use_delay = USE_DELAY;
 
         // Vanilla `startUseItem` checks the entity target before block/item
-        // use and sends one interact packet; the server does the rest
-        // (trading, feeding, leads, the villager head-shake).
-        // TODO: consuming unconditionally is an approximation; vanilla falls
-        // through to `useItem` when the client-side `interactOn` returns PASS
-        // (e.g. eating while the crosshair rests on a passive mob).
+        // use. A client-side PASS falls through to held-item use. Pomme does
+        // not yet simulate every entity's stateful `mobInteract`, but it can
+        // make the important consumable decision exactly from the 26.2 entity
+        // food tags: food for that entity consumes the click, while unrelated
+        // player food falls through (for example, eating steak while looking
+        // at a cow).
         if let Some(HitResult::Entity(hit)) = self.target {
             sender.send_raw(wire::encode_interact(
                 hit.entity_id,
                 hit.location - hit.entity_pos,
                 sneaking,
             ));
+            if let Some(stack) = held_stack
+                && stack_component::<Consumable>(stack).is_some()
+                && !entity_consumes_consumable(hit.entity_type, stack.kind)
+            {
+                return self.use_item(
+                    sender,
+                    audio,
+                    chunks,
+                    player_pos,
+                    eye_pos,
+                    look,
+                    held_stack,
+                    food,
+                    invulnerable,
+                    effects,
+                );
+            }
             self.swing(sender);
             return true;
         }
@@ -1449,6 +1468,63 @@ fn stack_component<T: DefaultableComponent + Clone>(stack: &ItemStackData) -> Op
         .or_else(|| get_default_component::<T>(stack.kind))
 }
 
+/// Consumable members of vanilla 26.2's entity-food tags. Non-consumable
+/// interaction items (leads, saddles, buckets, shears, dyes, and so on) stay on
+/// the conservative entity-consumed path above; this table only decides when a
+/// player consumable must *not* fall through to `useItem`.
+fn entity_consumes_consumable(entity: EntityKind, item: ItemKind) -> bool {
+    match entity {
+        EntityKind::Pig => matches!(
+            item,
+            ItemKind::Carrot | ItemKind::Potato | ItemKind::Beetroot
+        ),
+        EntityKind::Wolf => matches!(
+            item,
+            ItemKind::Beef
+                | ItemKind::Chicken
+                | ItemKind::CookedBeef
+                | ItemKind::CookedChicken
+                | ItemKind::CookedMutton
+                | ItemKind::CookedPorkchop
+                | ItemKind::CookedRabbit
+                | ItemKind::Mutton
+                | ItemKind::Porkchop
+                | ItemKind::Rabbit
+                | ItemKind::RottenFlesh
+                | ItemKind::Cod
+                | ItemKind::CookedCod
+                | ItemKind::Salmon
+                | ItemKind::CookedSalmon
+                | ItemKind::TropicalFish
+                | ItemKind::Pufferfish
+                | ItemKind::RabbitStew
+        ),
+        EntityKind::Cat | EntityKind::Ocelot => {
+            matches!(item, ItemKind::Cod | ItemKind::Salmon)
+        }
+        EntityKind::Parrot => item == ItemKind::Cookie,
+        EntityKind::Rabbit => matches!(item, ItemKind::Carrot | ItemKind::GoldenCarrot),
+        EntityKind::Fox => matches!(item, ItemKind::SweetBerries | ItemKind::GlowBerries),
+        EntityKind::Horse | EntityKind::Donkey | EntityKind::Mule | EntityKind::SkeletonHorse => {
+            matches!(
+                item,
+                ItemKind::Apple
+                    | ItemKind::Carrot
+                    | ItemKind::GoldenCarrot
+                    | ItemKind::GoldenApple
+                    | ItemKind::EnchantedGoldenApple
+            )
+        }
+        EntityKind::Armadillo => item == ItemKind::SpiderEye,
+        EntityKind::Piglin => matches!(item, ItemKind::Porkchop | ItemKind::CookedPorkchop),
+        EntityKind::Nautilus => matches!(
+            item,
+            ItemKind::Cod | ItemKind::Salmon | ItemKind::TropicalFish | ItemKind::Pufferfish
+        ),
+        _ => false,
+    }
+}
+
 fn active_consumable(stack: &ItemStackData, consumable: Consumable) -> ActiveUse {
     let duration = (consumable.consume_seconds * 20.0) as i32;
     ActiveUse {
@@ -1654,6 +1730,7 @@ fn nearest_entity_hit(from: DVec3, to: DVec3, entities: &EntityStore) -> Option<
             nearest_dist_sq = dist_sq;
             nearest = Some(EntityHitResult {
                 entity_id,
+                entity_type: entity.entity_type,
                 location,
                 entity_pos: entity.position.into(),
             });
@@ -1878,6 +1955,7 @@ mod tests {
 
         interaction.target = Some(HitResult::Entity(EntityHitResult {
             entity_id: 300,
+            entity_type: EntityKind::Cow,
             location: DVec3::ZERO,
             entity_pos: DVec3::ZERO,
         }));
@@ -1909,6 +1987,38 @@ mod tests {
 
         state.attack_strength_ticker = attack_strength_delay(Some(&spear)).ceil() as u32;
         assert!(!state.cannot_attack_with_item(Some(&spear)));
+    }
+
+    #[test]
+    fn unrelated_consumables_fall_through_entity_interaction() {
+        assert!(
+            !entity_consumes_consumable(EntityKind::Cow, ItemKind::CookedBeef),
+            "a cow does not consume steak, so vanilla falls through to eating it"
+        );
+        assert!(entity_consumes_consumable(
+            EntityKind::Pig,
+            ItemKind::Carrot
+        ));
+        assert!(entity_consumes_consumable(
+            EntityKind::Wolf,
+            ItemKind::CookedBeef
+        ));
+        assert!(entity_consumes_consumable(
+            EntityKind::Horse,
+            ItemKind::Apple
+        ));
+        assert!(entity_consumes_consumable(
+            EntityKind::Parrot,
+            ItemKind::Cookie
+        ));
+        assert!(entity_consumes_consumable(
+            EntityKind::Armadillo,
+            ItemKind::SpiderEye
+        ));
+        assert!(entity_consumes_consumable(
+            EntityKind::Nautilus,
+            ItemKind::Pufferfish
+        ));
     }
 
     #[test]
