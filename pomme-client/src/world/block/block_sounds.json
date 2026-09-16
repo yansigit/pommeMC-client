@@ -913,7 +913,7 @@
   "sandstone_stairs": ["block.stone.hit", "block.stone.break", 1.0, 1.0],
   "sandstone_wall": ["block.stone.hit", "block.stone.break", 1.0, 1.0],
   "scaffolding": ["block.scaffolding.hit", "block.scaffolding.break", 1.0, 1.0],
-  "sculk": ["block.sculk.hit", "block.sculk.break", 1.0, 1.0],
+  "sculk": ["block.sculk_block.hit", "block.sculk_block.break", 1.0, 1.0],
   "sculk_catalyst": ["block.sculk_catalyst.hit", "block.sculk_catalyst.break", 1.0, 1.0],
   "sculk_sensor": ["block.sculk_sensor.hit", "block.sculk_sensor.break", 1.0, 1.0],
   "sculk_shrieker": ["block.sculk_shrieker.hit", "block.sculk_shrieker.break", 1.0, 1.0],

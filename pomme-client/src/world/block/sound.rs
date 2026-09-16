@@ -5,11 +5,10 @@
 //! block is destroyed (level event 2001). `azalea-block` does not expose sound
 //! type, so the block id -> sounds table was extracted from the decompiled
 //! vanilla `Blocks.java` / `SoundType.java` and is embedded here as
-//! `block_sounds.json`.
-//!
-//! TODO: generate `block_sounds.json` with a blockgen subcommand parsing
-//! `.sound(SoundType.X)` from the decompiled `Blocks.java` (like the
-//! behavior seed) instead of hand transcription, so values can't drift.
+//! `block_sounds.json`. Regenerate it from matching decompiled `Blocks.java`
+//! and `SoundType.java` sources with `blockgen sounds`; explicit sound
+//! assignments and copied properties are refreshed while unsupported helper
+//! constructors are retained and reported from the existing table.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{LazyLock, Mutex};
@@ -82,6 +81,8 @@ mod tests {
         assert_eq!(brk("oak_door"), Some("block.wood.break"));
         assert_eq!(hit("dirt"), Some("block.gravel.hit"));
         assert_eq!(hit("copper_block"), Some("block.copper.hit"));
+        assert_eq!(hit("sculk"), Some("block.sculk_block.hit"));
+        assert_eq!(brk("sculk"), Some("block.sculk_block.break"));
         // METAL carries a non-default pitch (1.5).
         assert_eq!(
             BLOCK_SOUNDS.get("gold_block"),

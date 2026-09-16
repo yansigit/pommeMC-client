@@ -1580,8 +1580,12 @@
       "occurrence": 0,
       "wave": "4",
       "area": "gameplay-state-and-physics",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "blockgen sounds parses decompiled Blocks.java and SoundType.java into deterministic hit, break, volume, and pitch entries",
+        "An acceptance run against public official 26.2 sources regenerated all 1198 entries and exposed the stale sculk event as block.sculk_block, which was corrected",
+        "Direct SoundType assignments, STONE defaults, and copied properties are authoritative; unsupported helper entries are retained and reported, while new unresolved blocks fail"
+      ]
     },
     {
       "id": "marker-9d6ce749a82a",
