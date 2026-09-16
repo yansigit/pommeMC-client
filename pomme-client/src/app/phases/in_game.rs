@@ -1675,11 +1675,11 @@ pub fn update_game(
     if core.input.key_just_pressed(winit::keyboard::KeyCode::F1) && game.input_live() {
         game.hide_gui = !game.hide_gui;
     }
-    // Vanilla leaves bed via InBedChatScreen's ESC / "Leave bed" button; no
-    // bed screen yet, so the jump key wakes. TODO: InBedChatScreen.
+    // In-bed wake: ESC or Jump wakes the sleeping player by sending stop sleeping command.
     if game.input_live()
         && game.player.is_sleeping()
-        && core.input.action_just_pressed(input::Action::Jump)
+        && (core.input.action_just_pressed(input::Action::Jump)
+            || core.input.key_just_pressed(winit::keyboard::KeyCode::Escape))
     {
         core.send_stop_sleeping(connection);
     }

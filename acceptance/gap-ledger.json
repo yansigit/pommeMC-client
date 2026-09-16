@@ -99,8 +99,12 @@
       "wave": "5",
       "area": "inventory",
       "requirement": "Server-authoritative semantics for every supported menu and creative action",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "player/menu_click.rs implements server-authoritative slot contracts for beacon, brewing, 3x3, hopper, and merchant containers",
+        "ui/creative_inventory.rs: creative drop reads real inventory slots and rejects empty or unknown actions",
+        "acceptance/scripts/inventory-toggle.json verifies container inventory transitions across gameplay ticks"
+      ]
     },
     {
       "id": "fluid-rendering",
@@ -451,8 +455,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "In-bed wake dispatches StopSleeping on either Jump action or ESC key press",
+        "core::send_stop_sleeping encodes and sends PlayerCommand::StopSleeping across active connection"
+      ]
     },
     {
       "id": "marker-658f5bde5609",
@@ -1559,8 +1566,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "Main menu keyboard focus advancement handles buttons and icons cleanly",
+        "make_focus_ctx and focus_advance provide complete keyboard navigation for title screen"
+      ]
     },
     {
       "id": "marker-9e742e5aaeb5",
@@ -1592,8 +1602,11 @@
       "occurrence": 0,
       "wave": "5",
       "area": "presentation-and-interface",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "cycle_fields cycles keyboard focus across all form fields via Tab and Shift+Tab",
+        "server_list and menu tests verify focus navigation across all server forms"
+      ]
     },
     {
       "id": "marker-a52dabc871bd",

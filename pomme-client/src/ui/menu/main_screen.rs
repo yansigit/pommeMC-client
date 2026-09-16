@@ -214,8 +214,6 @@ impl MainMenu {
         });
         cy += 1.0 + 16.0 * s;
 
-        // TODO: fold the bottom icon rows into the focus ring too (arrow-key
-        // nearest-rect navigation is still deferred).
         self.focus_advance(input);
         let mut ctx = self.make_focus_ctx(input);
 

@@ -882,8 +882,6 @@ impl MainMenu {
     /// Tab / Shift+Tab cycle keyboard focus between a form's `field_count` text
     /// fields (vanilla `changeFocus`). Sub-1000 forms don't unify buttons into
     /// this ring yet.
-    // TODO: fold form buttons into the focus ring so Tab moves field->button
-    // like vanilla TabNavigation.
     pub(super) fn cycle_fields(&mut self, input: &MenuInput, field_count: u8) {
         if !input.tab {
             return;
