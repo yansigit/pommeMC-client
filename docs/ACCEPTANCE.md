@@ -23,8 +23,11 @@ The integrated gameplay scenario also runs
 `acceptance/scripts/gameplay-actions.json`. It waits for the real `InGame`
 phase, opens and closes the inventory, captures the server-provided player
 position, holds the normal forward action, and verifies bounded forward movement.
+The fixture provisions a smooth-stone stack through the integrated server. The
+script mines the target, verifies the resulting air state, places the held block
+back against its neighbor, and verifies the restored block state.
 All input flows through `Action`/`InputState`, and the retained frame-by-frame
-trace records both UI and world-position assertions.
+trace records UI, position, and world-state assertions.
 
 `native-secure-chat` independently rebuilds the protocol 776 signable payload,
 verifies the RSA-SHA256 signature as a strict server would, checks the 1.21.5+

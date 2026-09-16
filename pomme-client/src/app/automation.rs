@@ -40,6 +40,15 @@ enum Step {
         min: [f64; 3],
         max: [f64; 3],
     },
+    CaptureTargetBlock {
+        id: String,
+    },
+    AssertCapturedBlock {
+        id: String,
+    },
+    AssertHeldItem {
+        id: String,
+    },
     Exit,
 }
 
@@ -134,6 +143,7 @@ pub struct Automation {
     wait_frames_remaining: Option<u32>,
     phase_wait_frames: u32,
     position_anchor: Option<[f64; 3]>,
+    block_target: Option<[i32; 3]>,
     events: Vec<TraceEvent>,
     exit_requested: bool,
     failure: Option<String>,
@@ -169,6 +179,7 @@ impl Automation {
             wait_frames_remaining: None,
             phase_wait_frames: 0,
             position_anchor: None,
+            block_target: None,
             events: Vec::new(),
             exit_requested: false,
             failure: None,
@@ -277,6 +288,85 @@ impl Automation {
                         return;
                     }
                     self.record(format!("assert_position_delta={delta:?}"));
+                    self.step += 1;
+                }
+                Step::CaptureTargetBlock { id } => {
+                    let AppPhase::InGame { game, .. } = phase else {
+                        self.fail(format!(
+                            "step {} cannot capture a block outside the in-game phase",
+                            self.step
+                        ));
+                        return;
+                    };
+                    let Some(pos) = game.interaction.block_target_pos() else {
+                        self.fail(format!(
+                            "step {} has no block under the crosshair",
+                            self.step
+                        ));
+                        return;
+                    };
+                    let state = game.chunk_store.get_block_state(pos[0], pos[1], pos[2]);
+                    let actual = crate::world::block::block_id(state);
+                    if actual != id {
+                        self.fail(format!(
+                            "step {} targeted block at {pos:?} was {actual:?}, expected {id:?}",
+                            self.step
+                        ));
+                        return;
+                    }
+                    self.block_target = Some(pos);
+                    self.record(format!("capture_target_block={pos:?}:{actual}"));
+                    self.step += 1;
+                }
+                Step::AssertCapturedBlock { id } => {
+                    let AppPhase::InGame { game, .. } = phase else {
+                        self.fail(format!(
+                            "step {} cannot inspect a block outside the in-game phase",
+                            self.step
+                        ));
+                        return;
+                    };
+                    let Some(pos) = self.block_target else {
+                        self.fail(format!(
+                            "step {} requires a captured block target",
+                            self.step
+                        ));
+                        return;
+                    };
+                    let state = game.chunk_store.get_block_state(pos[0], pos[1], pos[2]);
+                    let actual = crate::world::block::block_id(state);
+                    if actual != id {
+                        self.fail(format!(
+                            "step {} captured block at {pos:?} was {actual:?}, expected {id:?}",
+                            self.step
+                        ));
+                        return;
+                    }
+                    self.record(format!("assert_captured_block={pos:?}:{actual}"));
+                    self.step += 1;
+                }
+                Step::AssertHeldItem { id } => {
+                    let AppPhase::InGame { game, .. } = phase else {
+                        self.fail(format!(
+                            "step {} cannot inspect an item outside the in-game phase",
+                            self.step
+                        ));
+                        return;
+                    };
+                    let actual = game
+                        .player
+                        .inventory
+                        .held_stack(input.selected_slot())
+                        .map(|stack| crate::player::inventory::item_resource_name(stack.kind))
+                        .unwrap_or_else(|| "air".to_owned());
+                    if actual != *id {
+                        self.fail(format!(
+                            "step {} held item was {actual:?}, expected {id:?}",
+                            self.step
+                        ));
+                        return;
+                    }
+                    self.record(format!("assert_held_item={actual}"));
                     self.step += 1;
                 }
                 Step::Exit => {

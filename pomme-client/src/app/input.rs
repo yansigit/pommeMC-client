@@ -472,6 +472,13 @@ impl InputState {
         self.recent_actions.get(&action).copied().unwrap_or(false)
     }
 
+    /// Whether an acceptance script is deliberately holding this action. This
+    /// remains separate from physical input so a graphical capture can keep
+    /// the OS cursor released while exercising normal gameplay handlers.
+    pub fn action_is_injected(&self, action: Action) -> bool {
+        self.injected_actions.contains(&action)
+    }
+
     /// Drops a pending action so a handler that already consumed the
     /// originating key press doesn't trigger it again.
     pub fn clear_action(&mut self, action: Action) {
@@ -931,6 +938,7 @@ mod tests {
 
         input.inject_action_press(Action::Jump);
         assert!(input.performing_action(Action::Jump));
+        assert!(input.action_is_injected(Action::Jump));
         assert!(input.action_just_pressed(Action::Jump));
 
         input.clear_just_pressed_actions();
@@ -939,6 +947,7 @@ mod tests {
 
         input.inject_action_release(Action::Jump);
         assert!(!input.performing_action(Action::Jump));
+        assert!(!input.action_is_injected(Action::Jump));
     }
 
     #[test]

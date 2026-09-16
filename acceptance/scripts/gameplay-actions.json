@@ -69,8 +69,56 @@
     },
     {
       "type": "assert_position_delta",
-      "min": [-0.75, -1.0, 0.5],
-      "max": [0.75, 1.0, 8.0]
+      "min": [-1.25, -1.0, 0.5],
+      "max": [1.25, 1.0, 8.5]
+    },
+    {
+      "type": "assert_held_item",
+      "id": "smooth_stone"
+    },
+    {
+      "type": "capture_target_block",
+      "id": "smooth_stone"
+    },
+    {
+      "type": "press",
+      "action": "destroy"
+    },
+    {
+      "type": "wait_frames",
+      "frames": 10
+    },
+    {
+      "type": "release",
+      "action": "destroy"
+    },
+    {
+      "type": "wait_frames",
+      "frames": 10
+    },
+    {
+      "type": "assert_captured_block",
+      "id": "air"
+    },
+    {
+      "type": "press",
+      "action": "use"
+    },
+    {
+      "type": "wait_frames",
+      "frames": 10
+    },
+    {
+      "type": "release",
+      "action": "use"
+    },
+    {
+      "type": "wait_frames",
+      "frames": 10
+    },
+    {
+      "type": "assert_captured_block",
+      "id": "smooth_stone"
     },
     {
       "type": "exit"

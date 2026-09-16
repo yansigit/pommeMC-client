@@ -94,7 +94,7 @@
     },
     {
       "id": "integrated-gameplay-render",
-      "description": "Launch SteelMC in-process, join through the client, exercise inventory and movement, render gameplay, and shut down cleanly",
+      "description": "Launch SteelMC in-process, join through the client, exercise inventory, movement, mining, and placement, render gameplay, and shut down cleanly",
       "protocol": "26.2 (776)",
       "server_fixture": "steelmc-copper-golem-showcase",
       "fixture_hash": "${GIT_HEAD}",

@@ -18,14 +18,16 @@ use steel_core::command::CommandRegistry;
 use steel_core::config::{
     DomainConfig, RuntimeConfig, StorageSelection, WorldEntryConfig, WorldsConfig,
 };
+use steel_core::inventory::container::Container;
 use steel_core::permission::{PermissionGroupManager, PermissionGroupsConfig};
 use steel_core::server::Server;
 use steel_core::server::jobs::{ChunkRequestJob, ServerJobContext};
 use steel_login::{JavaTcpClient, ServerConnectionSession};
+use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_game_rules::RESPAWN_RADIUS;
-use steel_registry::{REGISTRY, vanilla_blocks};
+use steel_registry::{REGISTRY, vanilla_blocks, vanilla_items};
 use steel_utils::threading::{available_worker_threads, worker_threads_for_available};
-use steel_utils::types::UpdateFlags;
+use steel_utils::types::{GameType, UpdateFlags};
 use steel_utils::{BlockPos, ChunkPos, Identifier};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::runtime::{Builder, Runtime};
@@ -259,6 +261,30 @@ async fn serve(
     client.start_outgoing_packet_task(outgoing);
     client.start_incoming_packet_task(incoming);
 
+    if options.fixture.is_some() {
+        let server = Arc::clone(&server);
+        let cancel = cancel.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Some(player) = server.get_players().into_iter().next() {
+                    {
+                        let mut inventory = player.inventory.lock();
+                        inventory.set_selected_slot(0);
+                        inventory
+                            .set_item(0, ItemStack::with_count(&vanilla_items::SMOOTH_STONE, 64));
+                    }
+                    player.send_inventory_to_remote();
+                    tracing::info!("Provisioned integrated acceptance inventory");
+                    break;
+                }
+                tokio::select! {
+                    () = cancel.cancelled() => break,
+                    () = tokio::time::sleep(std::time::Duration::from_millis(10)) => {}
+                }
+            }
+        });
+    }
+
     let _ = started.send(Ok(()));
 
     cancel.cancelled().await;
@@ -363,8 +389,8 @@ fn apply_fixture(
                 level_data.data_mut().spawn.angle = 0.0;
                 fixture_spawn
             };
-            for dx in -4..=4 {
-                for dz in -1..=5 {
+            for dx in -5..=5 {
+                for dz in -1..=11 {
                     set_fixture_block(
                         ready_chunks,
                         positions,
@@ -388,7 +414,7 @@ fn apply_fixture(
                 (&vanilla_blocks::WEATHERED_COPPER_GOLEM_STATUE, "sitting"),
                 (&vanilla_blocks::OXIDIZED_COPPER_GOLEM_STATUE, "star"),
             ];
-            for ((block, pose), dx) in statues.into_iter().zip([-3, -1, 1, 3]) {
+            for ((block, pose), dx) in statues.into_iter().zip([-4, -2, 2, 4]) {
                 let state = REGISTRY
                     .blocks
                     .state_id_from_block_defaulted_properties(
@@ -402,6 +428,21 @@ fn apply_fixture(
                     fixture_spawn.offset(dx, 1, 4),
                     state,
                 )?;
+            }
+            // A deterministic straight-ahead interaction lane. Acceptance
+            // mines the first block, then places the provisioned block back
+            // against the backing block through the normal protocol path.
+            for dx in -2..=2 {
+                for dy in 1..=2 {
+                    for dz in [9, 10] {
+                        set_fixture_block(
+                            ready_chunks,
+                            positions,
+                            fixture_spawn.offset(dx, dy, dz),
+                            vanilla_blocks::SMOOTH_STONE.default_state(),
+                        )?;
+                    }
+                }
             }
             tracing::info!(
                 "Installed copper golem graphics fixture at {:?}",
@@ -457,12 +498,13 @@ fn runtime_config(options: &LaunchOptions, chunk_threads: usize) -> RuntimeConfi
 }
 
 fn worlds_config(options: &LaunchOptions) -> WorldsConfig {
+    let fixture_game_mode = options.fixture.map(|_| GameType::Creative);
     let world = |name: &str, default: bool| WorldEntryConfig {
         name: name.to_owned(),
         generator: Identifier::vanilla(name.to_owned()),
         default,
         seed: None,
-        default_gamemode: None,
+        default_gamemode: fixture_game_mode,
         difficulty: None,
         storage: None,
         nether_portal_target: None,
@@ -473,7 +515,7 @@ fn worlds_config(options: &LaunchOptions) -> WorldsConfig {
     WorldsConfig {
         save_path: options.save_path.to_string_lossy().into_owned(),
         seed: Some(options.seed.to_string()),
-        default_gamemode: None,
+        default_gamemode: fixture_game_mode,
         difficulty: None,
         storage: Some(StorageSelection::default_world_disk()),
         player_storage: Some(StorageSelection::default_player_file()),
@@ -482,7 +524,7 @@ fn worlds_config(options: &LaunchOptions) -> WorldsConfig {
             DomainConfig {
                 default: true,
                 seed: None,
-                default_gamemode: None,
+                default_gamemode: fixture_game_mode,
                 difficulty: None,
                 storage: None,
                 worlds: vec![

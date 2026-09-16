@@ -136,6 +136,15 @@ pub struct InteractionState {
 }
 
 impl InteractionState {
+    pub fn block_target_pos(&self) -> Option<[i32; 3]> {
+        match self.target {
+            Some(HitResult::Block(hit)) => {
+                Some([hit.block_pos.x, hit.block_pos.y, hit.block_pos.z])
+            }
+            _ => None,
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             target: None,
@@ -374,7 +383,9 @@ impl InteractionState {
         // swing) runs first, then `--missTime`, then the player entity advances
         // `updateSwingTime` and `updatingUsingItem`. Running `update_swing`
         // last keeps the swing animation cadence in lockstep with vanilla.
-        if !input.is_cursor_captured() {
+        let scripted_interaction = input.action_is_injected(input::Action::Destroy)
+            || input.action_is_injected(input::Action::Use);
+        if !input.is_cursor_captured() && !scripted_interaction {
             self.stop_destroying(sender);
             // No screen-open release in vanilla either: an in-flight use keeps
             // ticking (and completing) while a menu is up.
