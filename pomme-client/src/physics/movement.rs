@@ -85,7 +85,7 @@ pub fn tick(
 
     let (sin_y_rot, cos_y_rot) = look_sin_cos(player);
 
-    update_fly_state(player, input, sin_y_rot, cos_y_rot);
+    update_fly_state(player, input, chunk_store, sin_y_rot, cos_y_rot);
 
     if crate::player::is_spectator(player.game_mode) {
         tick_spectator(player, input);
@@ -119,7 +119,7 @@ pub fn tick(
         } else if (player.on_ground || (in_water && player.fluid_height <= FLUID_JUMP_THRESHOLD))
             && player.no_jump_delay == 0
         {
-            jump_from_ground(player, sin_y_rot, cos_y_rot);
+            jump_from_ground(player, chunk_store, sin_y_rot, cos_y_rot);
             player.no_jump_delay = JUMP_DELAY_TICKS;
         }
     } else {
@@ -222,7 +222,13 @@ fn look_sin_cos(player: &LocalPlayer) -> (f64, f64) {
 
 // Vanilla `LocalPlayer.aiStep`: a fresh jump press arms the toggle window;
 // a second one inside it toggles flight.
-fn update_fly_state(player: &mut LocalPlayer, input: &InputState, sin_y_rot: f64, cos_y_rot: f64) {
+fn update_fly_state(
+    player: &mut LocalPlayer,
+    input: &InputState,
+    chunk_store: &ChunkStore,
+    sin_y_rot: f64,
+    cos_y_rot: f64,
+) {
     if player.may_fly {
         if crate::player::is_spectator(player.game_mode) {
             // Spectator flight is forced on. `tick` routes spectator travel
@@ -237,7 +243,7 @@ fn update_fly_state(player: &mut LocalPlayer, input: &InputState, sin_y_rot: f64
             } else if !player.swimming {
                 player.flying = !player.flying;
                 if player.flying && player.on_ground {
-                    jump_from_ground(player, sin_y_rot, cos_y_rot);
+                    jump_from_ground(player, chunk_store, sin_y_rot, cos_y_rot);
                 }
                 player.abilities_dirty = true;
                 player.jump_trigger_time = 0;
@@ -250,8 +256,14 @@ fn update_fly_state(player: &mut LocalPlayer, input: &InputState, sin_y_rot: f64
     }
 }
 
-fn jump_from_ground(player: &mut LocalPlayer, sin_y_rot: f64, cos_y_rot: f64) {
-    player.velocity.y = JUMP_VELOCITY.max(player.velocity.y);
+fn jump_from_ground(
+    player: &mut LocalPlayer,
+    chunk_store: &ChunkStore,
+    sin_y_rot: f64,
+    cos_y_rot: f64,
+) {
+    let jump_velocity = JUMP_VELOCITY * block_jump_factor(player, chunk_store);
+    player.velocity.y = jump_velocity.max(player.velocity.y);
 
     if player.sprinting {
         player.velocity.x -= sin_y_rot * SPRINT_JUMP_BOOST;
@@ -311,14 +323,56 @@ fn tick_land(
     overwrite_flying_vy(player, saved_vy);
 }
 
-/// Vanilla samples `getBlockStateOnGround`, which is the block directly below
-/// the player's feet. Use a small epsilon so an exact integer foot position
-/// still samples the supporting block rather than the air above it.
+/// Vanilla samples `getBlockPosBelowThatAffectsMyMovement`, half a block below
+/// the player's feet.
 fn ground_slipperiness(player: &LocalPlayer, chunk_store: &ChunkStore) -> f64 {
-    let x = player.position.x.floor() as i32;
-    let y = (player.position.y - 1.0e-4).floor() as i32;
-    let z = player.position.z.floor() as i32;
-    crate::world::block::slipperiness(chunk_store.get_block_state(x, y, z))
+    crate::world::block::slipperiness(movement_effect_block_state(player, chunk_store))
+}
+
+/// Vanilla's `getBlockPosBelowThatAffectsMyMovement` samples half a block below
+/// the feet, not merely an epsilon below them. This keeps slabs, carpets, and
+/// blocks occupied by the player's feet on the same lookup path as vanilla.
+fn movement_effect_block_state(
+    player: &LocalPlayer,
+    chunk_store: &ChunkStore,
+) -> azalea_block::BlockState {
+    chunk_store.get_block_state(
+        player.position.x.floor() as i32,
+        (player.position.y - 0.500_001).floor() as i32,
+        player.position.z.floor() as i32,
+    )
+}
+
+fn current_block_state(player: &LocalPlayer, chunk_store: &ChunkStore) -> azalea_block::BlockState {
+    chunk_store.get_block_state(
+        player.position.x.floor() as i32,
+        player.position.y.floor() as i32,
+        player.position.z.floor() as i32,
+    )
+}
+
+fn block_jump_factor(player: &LocalPlayer, chunk_store: &ChunkStore) -> f64 {
+    let current = crate::world::block::block_physics(current_block_state(player, chunk_store));
+    let factor = if current.jump_factor != 1.0 {
+        current.jump_factor
+    } else {
+        crate::world::block::block_physics(movement_effect_block_state(player, chunk_store))
+            .jump_factor
+    };
+    f64::from(factor)
+}
+
+fn block_speed_factor(player: &LocalPlayer, chunk_store: &ChunkStore) -> f64 {
+    let current_state = current_block_state(player, chunk_store);
+    let current = crate::world::block::block_physics(current_state);
+    let current_id = crate::world::block::block_id(current_state);
+    let factor = if current.speed_factor != 1.0 || matches!(current_id, "water" | "bubble_column") {
+        current.speed_factor
+    } else {
+        crate::world::block::block_physics(movement_effect_block_state(player, chunk_store))
+            .speed_factor
+    };
+    f64::from(factor)
 }
 
 /// Vanilla spectator travel is a camera move, not `Entity.move`: it ignores
@@ -444,6 +498,7 @@ fn apply_collision(
     half_width: f64,
     height: f64,
 ) {
+    let current_velocity = *player.velocity;
     let aabb = Aabb::from_center(player.position.into(), half_width, height / 2.0);
     let delta = back_off_from_edge(
         chunk_store,
@@ -474,13 +529,35 @@ fn apply_collision(
     if collided_z {
         player.velocity.z = 0.0;
     }
-    // Zero the vertical velocity on ground/ceiling contact (vanilla does this in
-    // move()). Gravity is re-applied after the move, leaving vy slightly
-    // negative so the next tick's move always probes downward and keeps
-    // `on_ground` stable instead of flickering.
+    // Vanilla computes restitution in Entity.move before LivingEntity applies
+    // gravity and drag. Players have zero entity restitution, so the generated
+    // block value is authoritative for downward impacts.
     if collided_y {
-        player.velocity.y = 0.0;
+        let effect_state = movement_effect_block_state(player, chunk_store);
+        let block_bounce =
+            f64::from(crate::world::block::block_physics(effect_state).bounce_restitution);
+        let suppresses_bounce = input.performing_action(input::Action::Sneak)
+            || crate::world::block::block_id(effect_state) == "honey_block";
+        if delta.y < 0.0
+            && -current_velocity.y >= GRAVITY
+            && !suppresses_bounce
+            && block_bounce > 0.0
+        {
+            let portion_with_movement = resolved.y / current_velocity.y;
+            let gravity_compensation = portion_with_movement * GRAVITY;
+            let effective_drag = 1.0 + portion_with_movement * (f64::from(VERTICAL_DRAG) - 1.0);
+            player.velocity.y =
+                (gravity_compensation - current_velocity.y) * effective_drag * block_bounce;
+        } else {
+            // Ground/ceiling contact without restitution zeroes vertical speed;
+            // the caller reapplies gravity so grounded ticks continue probing.
+            player.velocity.y = 0.0;
+        }
     }
+
+    let speed_factor = block_speed_factor(player, chunk_store);
+    player.velocity.x *= speed_factor;
+    player.velocity.z *= speed_factor;
 
     let (sin_y_rot, cos_y_rot) = look_sin_cos(player);
     if player.sprinting
@@ -731,6 +808,23 @@ fn square_movement(forward: f64, strafe: f64) -> (f64, f64) {
 mod tests {
     use super::*;
 
+    fn chunks_with_block(name: &str, y: i32) -> ChunkStore {
+        use azalea_core::position::ChunkPos;
+        use azalea_world::Chunk;
+
+        crate::world::block::init("26.2");
+        let mut chunks = ChunkStore::new(2);
+        let chunk_pos = ChunkPos::new(0, 0);
+        chunks.partial_storage.set(
+            &chunk_pos,
+            Some(Chunk::default()),
+            &mut chunks.chunk_storage,
+        );
+        let state = crate::world::block::first_state_of(name).expect("test block state");
+        chunks.set_block_state(0, y, 0, state);
+        chunks
+    }
+
     #[test]
     fn dead_player_keeps_zero_input_air_travel() {
         crate::world::block::init("26.2");
@@ -824,11 +918,79 @@ mod tests {
 
     #[test]
     fn ground_slipperiness_uses_the_block_under_the_feet() {
-        crate::world::block::init("26.2");
         let mut player = LocalPlayer::new();
-        player.position.y = 1.0;
-        let chunks = ChunkStore::new(2);
-        assert_eq!(ground_slipperiness(&player, &chunks), BLOCK_FRICTION);
+        player.position = dvec3(0.5, 1.5, 0.5).into();
+        let chunks = chunks_with_block("ice", 0);
+        let stone = crate::world::block::first_state_of("stone").expect("stone state");
+        chunks.set_block_state(0, 1, 0, stone);
+
+        assert_eq!(ground_slipperiness(&player, &chunks), f64::from(0.98_f32));
+    }
+
+    #[test]
+    fn honey_block_halves_ground_jump_velocity() {
+        let chunks = chunks_with_block("honey_block", 0);
+        let mut player = LocalPlayer::new();
+        player.position = dvec3(0.5, 1.0, 0.5).into();
+
+        jump_from_ground(&mut player, &chunks, 0.0, 1.0);
+
+        assert!((player.velocity.y - 0.21).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn block_speed_factor_scales_horizontal_velocity_after_movement() {
+        let chunks = chunks_with_block("soul_sand", 0);
+        let mut player = LocalPlayer::new();
+        player.position = dvec3(0.5, 1.0, 0.5).into();
+        player.velocity = crate::entity::components::Velocity::new(0.1, 0.0, 0.0);
+
+        apply_collision(
+            &mut player,
+            &InputState::released(),
+            &chunks,
+            0.0,
+            0.0,
+            PLAYER_HALF_WIDTH,
+            PLAYER_HEIGHT,
+        );
+
+        assert!((player.velocity.x - f64::from(0.4_f32) * 0.1).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn slime_block_bounces_unless_sneaking() {
+        let chunks = chunks_with_block("slime_block", 0);
+        let mut player = LocalPlayer::new();
+        player.position = dvec3(0.5, 1.2, 0.5).into();
+        player.velocity = crate::entity::components::Velocity::new(0.0, -0.5, 0.0);
+
+        apply_collision(
+            &mut player,
+            &InputState::released(),
+            &chunks,
+            0.0,
+            0.0,
+            PLAYER_HALF_WIDTH,
+            PLAYER_HEIGHT,
+        );
+        assert!(player.on_ground);
+        assert!(player.velocity.y > 0.5);
+
+        player.position = dvec3(0.5, 1.2, 0.5).into();
+        player.velocity = crate::entity::components::Velocity::new(0.0, -0.5, 0.0);
+        let mut sneaking = InputState::released();
+        sneaking.inject_action_press(input::Action::Sneak);
+        apply_collision(
+            &mut player,
+            &sneaking,
+            &chunks,
+            0.0,
+            0.0,
+            PLAYER_HALF_WIDTH,
+            PLAYER_HEIGHT,
+        );
+        assert_eq!(player.velocity.y, 0.0);
     }
 
     #[test]

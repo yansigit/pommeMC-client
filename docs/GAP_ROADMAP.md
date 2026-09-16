@@ -317,10 +317,18 @@ heuristics have been removed. Exhaustive tests build all 12 embedded protocol
 tables, and focused integration tests exercise the real collision collector and
 interaction raycast.
 
-This roadmap item remains open for generated movement modifiers and the complete
-scripted walking/mining/placement matrix in the exit gate below. Occlusion and
+Movement modifiers now come from a second checked-in table generated from the
+pinned 26.2 `Blocks.java`: all 1,196 current blocks have intentional friction,
+speed-factor, jump-factor, and bounce-restitution entries. The movement runtime
+uses vanilla's half-block-below sampling, current-block fallback rules, and
+landing restitution formula; focused gameplay-path tests cover ice friction,
+soul-sand speed, honey jumps, and sneaking versus slime bounce. Occlusion and
 fluid state are already sourced from the separate generated per-version state
 tables in `pomme-client/src/world/block/data`.
+
+This roadmap item remains open for the complete scripted walking/mining/placement
+matrix in the exit gate below and any still-distinct suffocation/view-blocking
+classification not represented by the generated shape and light tables.
 
 ### Exit gate
 

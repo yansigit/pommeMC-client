@@ -7,6 +7,7 @@
 //!   blockgen behavior <azalea generated.rs> <out.json>
 //!   blockgen sounds <Blocks.java> <SoundType.java> <out.json>
 //!   blockgen shapes <azalea collision/blocks.rs> <revision> <out.json>
+//!   blockgen physics <Blocks.java> <blocks.json> <revision> <out.json>
 //!   blockgen state <generated/state.json> <blocks-<v>.json> <out.json>
 //!
 //! `blocks` flattens the report into a compact per-block table (name, first
@@ -36,6 +37,11 @@
 //! generated shape must resolve. Pomme can then map older states by block name
 //! and compatible properties without shipping Azalea's physics runtime.
 //!
+//! `physics` extracts vanilla's friction, speed factor, jump factor, and bounce
+//! restitution from decompiled `Blocks.java`. It resolves copied properties and
+//! emits an intentional entry for every block in the corresponding generated
+//! block report, using vanilla defaults where no override exists.
+//!
 //! `state` compacts the raw per-state property dump produced by running
 //! vanilla (`tools/stategen/StateDump.java`, see `just stategen`) into the
 //! per-block table the client embeds: each field is a scalar when uniform
@@ -58,8 +64,11 @@ fn main() -> ExitCode {
         [cmd, generated, revision, out] if cmd == "shapes" => {
             gen_shapes(generated, revision, out)
         }
+        [cmd, blocks_java, blocks_json, revision, out] if cmd == "physics" => {
+            gen_physics(blocks_java, blocks_json, revision, out)
+        }
         [cmd, dump, blocks, out] if cmd == "state" => gen_state(dump, blocks, out),
-        _ => Err("usage: blockgen blocks <blocks.json> <version> <out.json>\n       blockgen behavior <generated.rs> <out.json>\n       blockgen sounds <Blocks.java> <SoundType.java> <out.json>\n       blockgen shapes <collision/blocks.rs> <revision> <out.json>\n       blockgen state <state.json> <blocks-<v>.json> <out.json>".into()),
+        _ => Err("usage: blockgen blocks <blocks.json> <version> <out.json>\n       blockgen behavior <generated.rs> <out.json>\n       blockgen sounds <Blocks.java> <SoundType.java> <out.json>\n       blockgen shapes <collision/blocks.rs> <revision> <out.json>\n       blockgen physics <Blocks.java> <blocks.json> <revision> <out.json>\n       blockgen state <state.json> <blocks-<v>.json> <out.json>".into()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -73,6 +82,191 @@ fn main() -> ExitCode {
 type Error = Box<dyn std::error::Error>;
 
 type LocalBox = [f64; 6];
+
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
+struct Physics {
+    friction: f32,
+    speed_factor: f32,
+    jump_factor: f32,
+    bounce_restitution: f32,
+}
+
+impl Default for Physics {
+    fn default() -> Self {
+        Self {
+            friction: 0.6,
+            speed_factor: 1.0,
+            jump_factor: 1.0,
+            bounce_restitution: 0.0,
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+struct PhysicsFile {
+    version: String,
+    source_revision: String,
+    blocks: BTreeMap<String, Physics>,
+}
+
+struct PhysicsSource {
+    name: String,
+    copied_from: Option<String>,
+    friction: Option<f32>,
+    speed_factor: Option<f32>,
+    jump_factor: Option<f32>,
+    bounce_restitution: Option<f32>,
+}
+
+impl PhysicsSource {
+    fn apply(&self, mut physics: Physics) -> Physics {
+        if let Some(value) = self.friction {
+            physics.friction = value;
+        }
+        if let Some(value) = self.speed_factor {
+            physics.speed_factor = value;
+        }
+        if let Some(value) = self.jump_factor {
+            physics.jump_factor = value;
+        }
+        if let Some(value) = self.bounce_restitution {
+            physics.bounce_restitution = value;
+        }
+        physics
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct PhysicsBlockFile {
+    version: String,
+    blocks: Vec<PhysicsBlockEntry>,
+}
+
+#[derive(serde::Deserialize)]
+struct PhysicsBlockEntry {
+    name: String,
+}
+
+fn gen_physics(
+    blocks_java_path: &str,
+    blocks_json_path: &str,
+    revision: &str,
+    out_path: &str,
+) -> Result<(), Error> {
+    let source = std::fs::read_to_string(blocks_java_path)?;
+    let block_file: PhysicsBlockFile =
+        serde_json::from_str(&std::fs::read_to_string(blocks_json_path)?)?;
+    let sources = parse_block_physics_sources(&source)?;
+    let resolved = resolve_block_physics(&sources)?;
+    let mut blocks = BTreeMap::new();
+    for block in block_file.blocks {
+        blocks.insert(
+            block.name.clone(),
+            resolved.get(&block.name).copied().unwrap_or_default(),
+        );
+    }
+    let file = PhysicsFile {
+        version: block_file.version,
+        source_revision: revision.to_owned(),
+        blocks,
+    };
+    std::fs::write(out_path, serde_json::to_string(&file)?)?;
+    println!(
+        "wrote {} block physics entries to {out_path}",
+        file.blocks.len()
+    );
+    Ok(())
+}
+
+fn resolve_block_physics(sources: &[PhysicsSource]) -> Result<BTreeMap<String, Physics>, Error> {
+    let mut resolved = BTreeMap::<String, Physics>::new();
+
+    for source in sources.iter().filter(|source| source.copied_from.is_none()) {
+        resolved.insert(source.name.clone(), source.apply(Physics::default()));
+    }
+    loop {
+        let before = resolved.len();
+        for source in sources {
+            if resolved.contains_key(&source.name) {
+                continue;
+            }
+            if let Some(parent) = &source.copied_from
+                && let Some(&physics) = resolved.get(parent)
+            {
+                resolved.insert(source.name.clone(), source.apply(physics));
+            }
+        }
+        if resolved.len() == before {
+            break;
+        }
+    }
+    let unresolved: Vec<_> = sources
+        .iter()
+        .filter(|source| !resolved.contains_key(&source.name))
+        .map(|source| source.name.as_str())
+        .collect();
+    if !unresolved.is_empty() {
+        return Err(format!(
+            "unresolved copied physics properties: {}",
+            unresolved.join(", ")
+        )
+        .into());
+    }
+    Ok(resolved)
+}
+
+fn parse_block_physics_sources(source: &str) -> Result<Vec<PhysicsSource>, Error> {
+    let declarations = java_declarations(source, "public static final Block ")?;
+    let mut raw = Vec::with_capacity(declarations.len());
+    let mut constants = std::collections::HashMap::new();
+    for statement in declarations {
+        let constant = declaration_name(statement, "public static final Block ")?;
+        let alias = ["BlockIds.", "BlockItemIds."]
+            .into_iter()
+            .find_map(|prefix| extract_java_constant(statement, prefix))
+            .map(str::to_ascii_lowercase)
+            .filter(|alias| alias != &constant.to_ascii_lowercase());
+        let name = alias.unwrap_or_else(|| constant.to_ascii_lowercase());
+        constants.insert(constant.to_owned(), name.clone());
+        let copied_from = [
+            ".ofLegacyCopy(",
+            ".ofFullCopy(",
+            ".ofFullCopyShared(",
+            ".ofCopy(",
+        ]
+        .into_iter()
+        .find_map(|prefix| extract_call_arg(statement, prefix, ')'))
+        .and_then(java_block_constant);
+        raw.push((
+            PhysicsSource {
+                name,
+                copied_from,
+                friction: extract_java_float_call(statement, ".friction(")?,
+                speed_factor: extract_java_float_call(statement, ".speedFactor(")?,
+                jump_factor: extract_java_float_call(statement, ".jumpFactor(")?,
+                bounce_restitution: extract_java_float_call(statement, ".bounceRestitution(")?,
+            },
+            constant.to_owned(),
+        ));
+    }
+    if raw.is_empty() {
+        return Err("no Block declarations found — wrong input file?".into());
+    }
+    for (entry, _) in &mut raw {
+        if let Some(parent) = &entry.copied_from
+            && let Some(name) = constants.get(parent)
+        {
+            entry.copied_from = Some(name.clone());
+        }
+    }
+    Ok(raw.into_iter().map(|(entry, _)| entry).collect())
+}
+
+fn extract_java_float_call(source: &str, prefix: &str) -> Result<Option<f32>, Error> {
+    extract_call_arg(source, prefix, ')')
+        .map(parse_java_float)
+        .transpose()
+}
 
 #[derive(serde::Serialize)]
 struct ShapeFile {
@@ -1206,6 +1400,41 @@ mod tests {
             Some("potted_azalea_bush")
         );
         assert!(!blocks[4].uses_default_properties);
+    }
+
+    #[test]
+    fn parses_and_resolves_block_physics_properties() {
+        let sources = parse_block_physics_sources(
+            r#"
+            public static final Block STONE = register(
+                BlockItemIds.STONE, BlockBehaviour.Properties.of());
+            public static final Block ICE = register(
+                BlockItemIds.ICE, BlockBehaviour.Properties.of().friction(0.98F));
+            public static final Block SOUL_SAND = register(
+                BlockItemIds.SOUL_SAND, BlockBehaviour.Properties.of().speedFactor(0.4F));
+            public static final Block SLIME_BLOCK = register(
+                BlockItemIds.SLIME_BLOCK,
+                BlockBehaviour.Properties.of().friction(0.8F).bounceRestitution(1.0F));
+            public static final Block HONEY_BLOCK = register(
+                BlockItemIds.HONEY_BLOCK,
+                BlockBehaviour.Properties.of().speedFactor(0.4F).jumpFactor(0.5F));
+            public static final Block COPIED_ICE = register(
+                BlockItemIds.COPIED_ICE,
+                BlockBehaviour.Properties.ofFullCopy(ICE).jumpFactor(0.75F));
+            "#,
+        )
+        .unwrap();
+        let physics = resolve_block_physics(&sources).unwrap();
+
+        assert_eq!(physics["stone"], Physics::default());
+        assert_eq!(physics["ice"].friction, 0.98);
+        assert_eq!(physics["soul_sand"].speed_factor, 0.4);
+        assert_eq!(physics["slime_block"].friction, 0.8);
+        assert_eq!(physics["slime_block"].bounce_restitution, 1.0);
+        assert_eq!(physics["honey_block"].speed_factor, 0.4);
+        assert_eq!(physics["honey_block"].jump_factor, 0.5);
+        assert_eq!(physics["copied_ice"].friction, 0.98);
+        assert_eq!(physics["copied_ice"].jump_factor, 0.75);
     }
 
     #[test]
