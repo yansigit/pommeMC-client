@@ -10,7 +10,7 @@ use azalea_core::position::BlockPos;
 use glam::{DVec3, dvec3};
 
 use crate::physics::aabb::Aabb;
-use crate::physics::block_shape::{self, LocalBox};
+use crate::physics::block_shape;
 use crate::physics::collision::resolve_collision;
 use crate::renderer::ParticleQuad;
 use crate::renderer::chunk::atlas::{AtlasRegion, AtlasUVMap};
@@ -420,9 +420,9 @@ impl ParticleStore {
 
         // Vanilla `ParticleEngine.destroy` scatters over the outline shape's
         // boxes, so a block with an empty outline emits nothing.
-        let boxes: &[LocalBox] = block_shape::outline_shape(state);
+        let boxes = block_shape::outline_shape(state, pos);
 
-        for b in boxes {
+        for b in boxes.iter() {
             let width_x = (b[3] - b[0]).min(1.0);
             let width_y = (b[4] - b[1]).min(1.0);
             let width_z = (b[5] - b[2]).min(1.0);

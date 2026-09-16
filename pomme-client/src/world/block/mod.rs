@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 
 use azalea_block::BlockState;
 
-use crate::physics::block_shape::{LocalBox, compute_outline, compute_shape};
+use crate::physics::block_shape::LocalBox;
 
 /// Compact per-state property map: `(key, value)` pairs sorted by key. States
 /// have at most ~10 properties, so binary search on a boxed slice beats a
@@ -123,16 +123,53 @@ struct BlockData {
     id: &'static str,
     properties: PropMap,
     behavior: BlockBehavior,
-    /// Collision shape; see `block_shape::partial_shape` for the encoding.
-    shape: Option<Box<[LocalBox]>>,
-    /// Outline shape (vanilla `getShape`) where it differs from `shape`; `None`
-    /// means the two agree and the collision shape doubles as the outline.
-    outline: Option<Box<[LocalBox]>>,
+    shapes: ShapeIds,
     is_air: bool,
     /// Vanilla `hasCollision` (`BlockBehaviour.Properties.noCollision()`).
     collides: bool,
     fluid: Fluid,
     light: LightProps,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct ShapeIds {
+    collision: u16,
+    outline: u16,
+    /// Azalea's generated BASIC_COLLISION_SHAPES_MAP: 0 empty, 1 full, 2
+    /// partial.
+    basic_collision: u8,
+    /// Vanilla BlockBehaviour.OffsetType: 0 none, 1 XZ, 2 XYZ.
+    offset: u8,
+}
+
+const FULL_CUBE_SHAPES: ShapeIds = ShapeIds {
+    collision: 1,
+    outline: 1,
+    basic_collision: 1,
+    offset: 0,
+};
+
+#[derive(serde::Deserialize)]
+struct ShapeFile {
+    version: String,
+    source_revision: String,
+    state_count: usize,
+    shapes: Vec<Vec<LocalBox>>,
+    basic_collision: Vec<u8>,
+    collision: Vec<u16>,
+    outline: Vec<u16>,
+    offsets: Vec<u8>,
+}
+
+struct LatestShapeState {
+    properties: Vec<(String, String)>,
+    shapes: ShapeIds,
+}
+
+struct ShapeCatalog {
+    shapes: Vec<Box<[LocalBox]>>,
+    exact: HashMap<String, ShapeIds>,
+    by_block: HashMap<String, Vec<LatestShapeState>>,
 }
 
 #[derive(serde::Deserialize)]
@@ -309,6 +346,163 @@ fn load_behaviors() -> HashMap<String, BehaviorEntry> {
         .expect("invalid block-behavior data")
 }
 
+const SHAPE_SOURCE_REVISION: &str = "ffedf17c9b6ff9fbafbf7e0d14c8d2366b2d0a32";
+
+fn shape_catalog() -> &'static ShapeCatalog {
+    static CATALOG: std::sync::LazyLock<ShapeCatalog> = std::sync::LazyLock::new(|| {
+        let file: ShapeFile = serde_json::from_str(include_str!("data/shapes-26.2.json"))
+            .expect("invalid generated block-shape data");
+        let latest: BlockFile = serde_json::from_str(BLOCK_DATA[0].1)
+            .expect("invalid latest block-state data for shapes");
+        assert_eq!(file.version, latest.version, "shape data version mismatch");
+        assert_eq!(
+            file.source_revision, SHAPE_SOURCE_REVISION,
+            "shape data was generated from an unpinned source"
+        );
+        assert_eq!(file.state_count, latest.state_count as usize);
+        for (name, len) in [
+            ("basic collision", file.basic_collision.len()),
+            ("collision", file.collision.len()),
+            ("outline", file.outline.len()),
+            ("offset", file.offsets.len()),
+        ] {
+            assert_eq!(len, file.state_count, "{name} shape map length mismatch");
+        }
+
+        let mut exact = HashMap::with_capacity(file.state_count);
+        let mut by_block: HashMap<String, Vec<LatestShapeState>> = HashMap::new();
+        let mut state_id = 0usize;
+        for block in &latest.blocks {
+            assert_eq!(block.first_id as usize, state_id);
+            let count: usize = block.props.iter().map(|(_, values)| values.len()).product();
+            for offset in 0..count {
+                let mut properties = Vec::with_capacity(block.props.len());
+                let mut stride = count;
+                for (key, values) in &block.props {
+                    stride /= values.len();
+                    properties.push((
+                        key.clone(),
+                        values[(offset / stride) % values.len()].clone(),
+                    ));
+                }
+                properties.sort_unstable();
+                let shapes = ShapeIds {
+                    collision: file.collision[state_id],
+                    outline: file.outline[state_id],
+                    basic_collision: file.basic_collision[state_id],
+                    offset: file.offsets[state_id],
+                };
+                let key = shape_key(
+                    &block.name,
+                    properties.iter().map(|(k, v)| (k.as_str(), v.as_str())),
+                );
+                assert!(
+                    exact.insert(key, shapes).is_none(),
+                    "duplicate latest block state"
+                );
+                by_block
+                    .entry(block.name.clone())
+                    .or_default()
+                    .push(LatestShapeState { properties, shapes });
+                state_id += 1;
+            }
+        }
+        assert_eq!(state_id, file.state_count);
+        let shapes: Vec<Box<[LocalBox]>> =
+            file.shapes.into_iter().map(Vec::into_boxed_slice).collect();
+        for ids in exact.values() {
+            assert!((ids.collision as usize) < shapes.len());
+            assert!((ids.outline as usize) < shapes.len());
+            assert!(ids.basic_collision <= 2 && ids.offset <= 2);
+        }
+        ShapeCatalog {
+            shapes,
+            exact,
+            by_block,
+        }
+    });
+    &CATALOG
+}
+
+fn shape_key<'a>(name: &str, properties: impl Iterator<Item = (&'a str, &'a str)>) -> String {
+    let mut key = String::with_capacity(name.len() + 32);
+    key.push_str(name);
+    for (property, value) in properties {
+        key.push('\0');
+        key.push_str(property);
+        key.push('=');
+        key.push_str(value);
+    }
+    key
+}
+
+fn compatible_shape_state(name: &str, properties: &PropMap) -> (String, Vec<(String, String)>) {
+    let name = match name {
+        // 26.2 split the original chain into iron and copper variants.
+        "chain" => "iron_chain",
+        // The pre-1.20.3 registry name for short grass.
+        "grass" => "short_grass",
+        name => name,
+    };
+    let mut properties: Vec<(String, String)> = properties
+        .entries()
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .collect();
+    if name == "creaking_heart" {
+        for (key, value) in &mut properties {
+            if key == "active" {
+                *key = "creaking_heart_state".into();
+                *value = if value == "true" { "awake" } else { "dormant" }.into();
+            } else if key == "creaking" {
+                *key = "creaking_heart_state".into();
+                *value = match value.as_str() {
+                    "disabled" => "uprooted",
+                    "active" => "awake",
+                    _ => "dormant",
+                }
+                .into();
+            }
+        }
+    }
+    properties.sort_unstable();
+    (name.to_owned(), properties)
+}
+
+fn resolve_shapes(name: &str, properties: &PropMap) -> ShapeIds {
+    let catalog = shape_catalog();
+    let (name, properties) = compatible_shape_state(name, properties);
+    let key = shape_key(
+        &name,
+        properties.iter().map(|(k, v)| (k.as_str(), v.as_str())),
+    );
+    if let Some(&shapes) = catalog.exact.get(&key) {
+        return shapes;
+    }
+
+    // A property added after an older protocol can leave multiple latest
+    // candidates. Accept that mapping only when every candidate has identical
+    // generated geometry. This makes compatibility explicit and fail-closed.
+    let mut matches = catalog
+        .by_block
+        .get(&name)
+        .into_iter()
+        .flatten()
+        .filter(|candidate| {
+            properties
+                .iter()
+                .all(|property| candidate.properties.binary_search(property).is_ok())
+        })
+        .map(|candidate| candidate.shapes);
+    let Some(first) = matches.next() else {
+        panic!("no generated shape for {name} {properties:?}");
+    };
+    assert!(
+        matches.all(|shapes| shapes == first),
+        "ambiguous generated shapes for {name} {properties:?}"
+    );
+    first
+}
+
 fn build_table(data: &str, state_data: &str) -> Vec<BlockData> {
     let file: BlockFile = serde_json::from_str(data).expect("invalid block-state data");
     let behaviors = load_behaviors();
@@ -397,8 +591,7 @@ fn build_table(data: &str, state_data: &str) -> Vec<BlockData> {
             }
             let properties = PropMap::from_pairs(pairs);
             let fluid = state_fluid(name, &properties);
-            let shape = compute_shape(name, &properties).map(Vec::into_boxed_slice);
-            let outline = compute_outline(name, &properties).map(Vec::into_boxed_slice);
+            let shapes = resolve_shapes(name, &properties);
             let light = LightProps {
                 emission: state_entry.e.get(offset as usize),
                 dampening: state_entry.d.get(offset as usize),
@@ -411,8 +604,7 @@ fn build_table(data: &str, state_data: &str) -> Vec<BlockData> {
                 id: name,
                 properties,
                 behavior,
-                shape,
-                outline,
+                shapes,
                 is_air,
                 collides,
                 fluid,
@@ -513,8 +705,7 @@ fn block_data(state: BlockState) -> &'static BlockData {
         id: "unknown",
         properties: PropMap::from_pairs(Vec::new()),
         behavior: DEFAULT_BEHAVIOR,
-        shape: None,
-        outline: None,
+        shapes: FULL_CUBE_SHAPES,
         is_air: false,
         collides: true,
         fluid: NO_FLUID,
@@ -606,7 +797,9 @@ pub fn fluid(state: BlockState) -> Fluid {
 }
 
 pub(crate) fn block_shape(state: BlockState) -> Option<&'static [LocalBox]> {
-    block_data(state).shape.as_deref()
+    let data = block_data(state);
+    (data.shapes.basic_collision != 1)
+        .then(|| shape_catalog().shapes[data.shapes.collision as usize].as_ref())
 }
 
 /// Outline shape for interaction raycasts (vanilla `getShape`), falling back to
@@ -614,7 +807,12 @@ pub(crate) fn block_shape(state: BlockState) -> Option<&'static [LocalBox]> {
 /// slice is a block the pick ray passes through.
 pub(crate) fn block_outline(state: BlockState) -> Option<&'static [LocalBox]> {
     let data = block_data(state);
-    data.outline.as_deref().or(data.shape.as_deref())
+    let shape = shape_catalog().shapes[data.shapes.outline as usize].as_ref();
+    (shape != [[0.0, 0.0, 0.0, 1.0, 1.0, 1.0]]).then_some(shape)
+}
+
+pub(crate) fn block_shape_offset(state: BlockState) -> u8 {
+    block_data(state).shapes.offset
 }
 
 /// Baked light properties for a state (vanilla `BlockStateBase` light cache).
@@ -872,10 +1070,7 @@ mod tests {
             block_shape(full),
             Some(&[[0.0, 0.0, 0.0, 1.0, 14.0 / 16.0, 1.0]][..])
         );
-        assert_eq!(
-            block_outline(full),
-            Some(&[[0.0, 0.0, 0.0, 1.0, 1.0, 1.0]][..])
-        );
+        assert_eq!(block_outline(full), None);
 
         // Fluids are clipped through, not targeted.
         for id in ["water", "lava"] {
@@ -943,6 +1138,35 @@ mod tests {
     fn block_data_covers_versions() {
         for v in pomme_protocol::version::VERSIONS {
             assert!(block_data_slot(v.protocol).is_some(), "{}", v.name);
+        }
+    }
+
+    #[test]
+    fn generated_shapes_cover_every_supported_state() {
+        let catalog = shape_catalog();
+        for (slot, &(protocol, data)) in BLOCK_DATA.iter().enumerate() {
+            let table = build_table(data, STATE_DATA[slot]);
+            assert!(
+                !table.is_empty(),
+                "empty block table for protocol {protocol}"
+            );
+            for (state, block) in table.iter().enumerate() {
+                assert!(
+                    (block.shapes.collision as usize) < catalog.shapes.len(),
+                    "invalid collision shape for protocol {protocol} state {state}"
+                );
+                assert!(
+                    (block.shapes.outline as usize) < catalog.shapes.len(),
+                    "invalid outline shape for protocol {protocol} state {state}"
+                );
+                let collision = catalog.shapes[block.shapes.collision as usize].as_ref();
+                match block.shapes.basic_collision {
+                    0 => assert!(collision.is_empty()),
+                    1 => assert_eq!(collision, [[0.0, 0.0, 0.0, 1.0, 1.0, 1.0]]),
+                    2 => assert!(!collision.is_empty()),
+                    value => panic!("invalid collision class {value}"),
+                }
+            }
         }
     }
 }

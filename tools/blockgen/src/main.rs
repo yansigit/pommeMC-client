@@ -6,6 +6,7 @@
 //!   blockgen blocks <reports/blocks.json> <version> <out.json>
 //!   blockgen behavior <azalea generated.rs> <out.json>
 //!   blockgen sounds <Blocks.java> <SoundType.java> <out.json>
+//!   blockgen shapes <azalea collision/blocks.rs> <revision> <out.json>
 //!   blockgen state <generated/state.json> <blocks-<v>.json> <out.json>
 //!
 //! `blocks` flattens the report into a compact per-block table (name, first
@@ -29,6 +30,12 @@
 //! carried from the existing output, and are listed so a new unresolved block
 //! cannot silently enter the table.
 //!
+//! `shapes` extracts Azalea's generated 26.2 collision and outline oracle into
+//! a compact, dependency-free JSON table. The source revision is recorded in
+//! the output, every state map must have the same length, and every referenced
+//! generated shape must resolve. Pomme can then map older states by block name
+//! and compatible properties without shipping Azalea's physics runtime.
+//!
 //! `state` compacts the raw per-state property dump produced by running
 //! vanilla (`tools/stategen/StateDump.java`, see `just stategen`) into the
 //! per-block table the client embeds: each field is a scalar when uniform
@@ -48,8 +55,11 @@ fn main() -> ExitCode {
         [cmd, blocks, sound_types, out] if cmd == "sounds" => {
             gen_sounds(blocks, sound_types, out)
         }
+        [cmd, generated, revision, out] if cmd == "shapes" => {
+            gen_shapes(generated, revision, out)
+        }
         [cmd, dump, blocks, out] if cmd == "state" => gen_state(dump, blocks, out),
-        _ => Err("usage: blockgen blocks <blocks.json> <version> <out.json>\n       blockgen behavior <generated.rs> <out.json>\n       blockgen sounds <Blocks.java> <SoundType.java> <out.json>\n       blockgen state <state.json> <blocks-<v>.json> <out.json>".into()),
+        _ => Err("usage: blockgen blocks <blocks.json> <version> <out.json>\n       blockgen behavior <generated.rs> <out.json>\n       blockgen sounds <Blocks.java> <SoundType.java> <out.json>\n       blockgen shapes <collision/blocks.rs> <revision> <out.json>\n       blockgen state <state.json> <blocks-<v>.json> <out.json>".into()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -61,6 +71,205 @@ fn main() -> ExitCode {
 }
 
 type Error = Box<dyn std::error::Error>;
+
+type LocalBox = [f64; 6];
+
+#[derive(serde::Serialize)]
+struct ShapeFile {
+    version: &'static str,
+    source_revision: String,
+    state_count: usize,
+    shapes: Vec<Vec<LocalBox>>,
+    basic_collision: Vec<u8>,
+    collision: Vec<u16>,
+    outline: Vec<u16>,
+    offsets: Vec<u8>,
+}
+
+fn gen_shapes(source_path: &str, revision: &str, out_path: &str) -> Result<(), Error> {
+    let source = std::fs::read_to_string(source_path)?;
+    let shapes = parse_shape_definitions(&source)?;
+    let basic_collision = parse_u8_map(&source, "BASIC_COLLISION_SHAPES_MAP")?;
+    let collision = parse_shape_map(&source, "COLLISION_SHAPES_MAP")?;
+    let outline = parse_shape_map(&source, "OUTLINE_SHAPES_MAP")?;
+    let offsets = parse_u8_map(&source, "RANDOM_SHAPE_OFFSETS_MAP")?;
+
+    if collision.len() != outline.len()
+        || collision.len() != offsets.len()
+        || collision.len() != basic_collision.len()
+    {
+        return Err(format!(
+            "shape map lengths differ: basic {}, collision {}, outline {}, offsets {}",
+            basic_collision.len(),
+            collision.len(),
+            outline.len(),
+            offsets.len()
+        )
+        .into());
+    }
+    for (kind, map) in [("collision", &collision), ("outline", &outline)] {
+        if let Some((state, shape)) = map
+            .iter()
+            .copied()
+            .enumerate()
+            .find(|&(_, shape)| shape as usize >= shapes.len())
+        {
+            return Err(format!(
+                "{kind} state {state} references SHAPE{shape}, but only {} shapes exist",
+                shapes.len()
+            )
+            .into());
+        }
+    }
+    if offsets.iter().any(|&offset| offset > 2) {
+        return Err("random shape offset map contains a value outside 0..=2".into());
+    }
+    if basic_collision.iter().any(|&shape| shape > 2) {
+        return Err("basic collision map contains a value outside 0..=2".into());
+    }
+
+    let file = ShapeFile {
+        version: "26.2",
+        source_revision: revision.to_owned(),
+        state_count: collision.len(),
+        shapes,
+        basic_collision,
+        collision,
+        outline,
+        offsets,
+    };
+    std::fs::write(out_path, serde_json::to_string(&file)?)?;
+    println!(
+        "wrote {} generated shapes for {} states to {out_path}",
+        file.shapes.len(),
+        file.state_count
+    );
+    Ok(())
+}
+
+fn parse_shape_definitions(source: &str) -> Result<Vec<Vec<LocalBox>>, Error> {
+    let end = source
+        .find("impl BlockWithShape for BlockState")
+        .ok_or("missing BlockWithShape implementation")?;
+    let source = &source[..end];
+    let marker = "static SHAPE";
+    let mut cursor = 0;
+    let mut parsed = BTreeMap::<usize, Vec<LocalBox>>::new();
+    while let Some(relative) = source[cursor..].find(marker) {
+        let start = cursor + relative;
+        let number_start = start + marker.len();
+        let number_end = source[number_start..]
+            .find(|c: char| !c.is_ascii_digit())
+            .map(|i| number_start + i)
+            .ok_or("unterminated shape number")?;
+        let id: usize = source[number_start..number_end].parse()?;
+        if source.as_bytes().get(number_end) != Some(&b':') {
+            cursor = number_end;
+            continue;
+        }
+        let next = source[number_end..]
+            .find(marker)
+            .map_or(source.len(), |i| number_end + i);
+        let definition = &source[start..next];
+        let boxes = parse_box_calls(definition)?;
+        if boxes.is_empty() && !definition.contains("EMPTY_SHAPE") {
+            return Err(format!("SHAPE{id} contains no boxes and is not EMPTY_SHAPE").into());
+        }
+        if parsed.insert(id, boxes).is_some() {
+            return Err(format!("duplicate SHAPE{id}").into());
+        }
+        cursor = next;
+    }
+    let max = *parsed
+        .keys()
+        .next_back()
+        .ok_or("no generated shapes found")?;
+    if parsed.len() != max + 1 {
+        return Err(format!(
+            "generated shape ids are not dense: {} definitions through SHAPE{max}",
+            parsed.len()
+        )
+        .into());
+    }
+    Ok((0..=max).map(|id| parsed.remove(&id).unwrap()).collect())
+}
+
+fn parse_box_calls(definition: &str) -> Result<Vec<LocalBox>, Error> {
+    let marker = "collision::box_shape(";
+    let mut cursor = 0;
+    let mut boxes = Vec::new();
+    while let Some(relative) = definition[cursor..].find(marker) {
+        let start = cursor + relative + marker.len();
+        let end = definition[start..]
+            .find(')')
+            .map(|i| start + i)
+            .ok_or("unterminated box_shape call")?;
+        let values: Vec<f64> = definition[start..end]
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::parse)
+            .collect::<Result<_, _>>()?;
+        if values.len() != 6 {
+            return Err(format!("box_shape has {} coordinates, expected 6", values.len()).into());
+        }
+        boxes.push(values.try_into().unwrap());
+        cursor = end + 1;
+    }
+    Ok(boxes)
+}
+
+fn array_initializer<'a>(source: &'a str, name: &str) -> Result<&'a str, Error> {
+    // Match the declaration rather than a bare suffix. The generated source
+    // also contains BASIC_COLLISION_SHAPES_MAP, which would otherwise be
+    // selected when looking for COLLISION_SHAPES_MAP.
+    let marker = format!("static {name}:");
+    let start = source
+        .find(&marker)
+        .ok_or_else(|| format!("missing {name}"))?;
+    let after_equals = source[start..]
+        .find('=')
+        .map(|i| start + i + 1)
+        .ok_or_else(|| format!("missing initializer for {name}"))?;
+    let open = source[after_equals..]
+        .find('[')
+        .map(|i| after_equals + i + 1)
+        .ok_or_else(|| format!("missing opening bracket for {name}"))?;
+    let close = source[open..]
+        .find("];")
+        .map(|i| open + i)
+        .ok_or_else(|| format!("missing closing bracket for {name}"))?;
+    Ok(&source[open..close])
+}
+
+fn parse_shape_map(source: &str, name: &str) -> Result<Vec<u16>, Error> {
+    let body = array_initializer(source, name)?;
+    let marker = "&SHAPE";
+    let mut cursor = 0;
+    let mut map = Vec::new();
+    while let Some(relative) = body[cursor..].find(marker) {
+        let start = cursor + relative + marker.len();
+        let end = body[start..]
+            .find(|c: char| !c.is_ascii_digit())
+            .map(|i| start + i)
+            .unwrap_or(body.len());
+        map.push(body[start..end].parse()?);
+        cursor = end;
+    }
+    if map.is_empty() {
+        return Err(format!("{name} contains no shape references").into());
+    }
+    Ok(map)
+}
+
+fn parse_u8_map(source: &str, name: &str) -> Result<Vec<u8>, Error> {
+    let body = array_initializer(source, name)?;
+    body.split(|c: char| !c.is_ascii_digit())
+        .filter(|part| !part.is_empty())
+        .map(str::parse)
+        .collect::<Result<_, _>>()
+        .map_err(Into::into)
+}
 
 struct Block {
     name: String,
@@ -1003,5 +1212,57 @@ mod tests {
     fn rejects_unknown_sound_event_shapes() {
         let error = sound_event_id("SoundEvents.BROKEN").unwrap_err();
         assert!(error.to_string().contains("no event suffix"));
+    }
+
+    const GENERATED_SHAPES: &str = r#"
+        static SHAPE0: &LazyLock<VoxelShape> = &collision::EMPTY_SHAPE;
+        static SHAPE1: LazyLock<VoxelShape> = LazyLock::new(|| {
+            let s = collision::box_shape(0., 0., 0., 1., 0.5, 1.);
+            Shapes::or(s, collision::box_shape(0.25, 0.5, 0.25, 0.75, 1., 0.75))
+        });
+
+        impl BlockWithShape for BlockState {}
+
+        static BASIC_COLLISION_SHAPES_MAP: &[u8; 2] = &[1, 0];
+        pub static RANDOM_SHAPE_OFFSETS_MAP: &[u8; 2] = &[0, 2];
+        static COLLISION_SHAPES_MAP: [&LazyLock<VoxelShape>; 2] = [&SHAPE0, &SHAPE1];
+        static OUTLINE_SHAPES_MAP: [&LazyLock<VoxelShape>; 2] = [&SHAPE1, &SHAPE1];
+    "#;
+
+    #[test]
+    fn parses_generated_shape_definitions_and_state_maps() {
+        let shapes = parse_shape_definitions(GENERATED_SHAPES).unwrap();
+        assert_eq!(shapes.len(), 2);
+        assert!(shapes[0].is_empty());
+        assert_eq!(
+            shapes[1],
+            vec![
+                [0.0, 0.0, 0.0, 1.0, 0.5, 1.0],
+                [0.25, 0.5, 0.25, 0.75, 1.0, 0.75]
+            ]
+        );
+        assert_eq!(
+            parse_u8_map(GENERATED_SHAPES, "BASIC_COLLISION_SHAPES_MAP").unwrap(),
+            [1, 0]
+        );
+        assert_eq!(
+            parse_shape_map(GENERATED_SHAPES, "COLLISION_SHAPES_MAP").unwrap(),
+            [0, 1]
+        );
+        assert_eq!(
+            parse_shape_map(GENERATED_SHAPES, "OUTLINE_SHAPES_MAP").unwrap(),
+            [1, 1]
+        );
+        assert_eq!(
+            parse_u8_map(GENERATED_SHAPES, "RANDOM_SHAPE_OFFSETS_MAP").unwrap(),
+            [0, 2]
+        );
+    }
+
+    #[test]
+    fn rejects_sparse_generated_shape_ids() {
+        let source = GENERATED_SHAPES.replace("SHAPE1", "SHAPE2");
+        let error = parse_shape_definitions(&source).unwrap_err();
+        assert!(error.to_string().contains("not dense"));
     }
 }

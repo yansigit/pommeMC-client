@@ -1,3 +1,4 @@
+use azalea_core::position::BlockPos;
 use glam::{DVec3, dvec3};
 
 use super::aabb::Aabb;
@@ -23,7 +24,8 @@ pub fn collect_block_aabbs(chunk_store: &ChunkStore, region: &Aabb) -> Vec<Aabb>
                 if !has_collision(state) {
                     continue;
                 }
-                match block_shape::partial_shape(state) {
+                let pos = BlockPos::new(bx, by, bz);
+                match block_shape::partial_shape(state, pos) {
                     Some(boxes) => {
                         let offset = dvec3(bx as f64, by as f64, bz as f64);
                         aabbs.extend(boxes.iter().map(|&b| Aabb::from_local(b, offset)));
@@ -131,4 +133,37 @@ pub fn resolve_collision(
     }
 
     (resolved, on_ground)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generated_slab_shape_reaches_collision_collection() {
+        use azalea_core::position::ChunkPos;
+        use azalea_world::Chunk;
+
+        crate::world::block::init("26.2");
+        let mut chunks = ChunkStore::new(2);
+        let chunk_pos = ChunkPos::new(0, 0);
+        chunks.partial_storage.set(
+            &chunk_pos,
+            Some(Chunk::default()),
+            &mut chunks.chunk_storage,
+        );
+        let slab = crate::world::block::find_state(
+            "oak_slab",
+            &[("type", "bottom"), ("waterlogged", "false")],
+        );
+        chunks.set_block_state(0, 0, 0, slab);
+
+        let boxes = collect_block_aabbs(
+            &chunks,
+            &Aabb::new(dvec3(-0.1, -0.1, -0.1), dvec3(1.1, 1.1, 1.1)),
+        );
+        assert_eq!(boxes.len(), 1);
+        assert_eq!(boxes[0].min, dvec3(0.0, 0.0, 0.0));
+        assert_eq!(boxes[0].max, dvec3(1.0, 0.5, 1.0));
+    }
 }

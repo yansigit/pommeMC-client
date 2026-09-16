@@ -302,9 +302,25 @@ errors.
 ### References
 
 - Azalea collision shapes:
-  [`collision/blocks.rs`](https://github.com/azalea-rs/azalea/blob/b65fa8cf1bb957976cefa926b9b500d44767d806/azalea-physics/src/collision/blocks.rs).
+  [`collision/blocks.rs`](https://github.com/azalea-rs/azalea/blob/ffedf17c9b6ff9fbafbf7e0d14c8d2366b2d0a32/azalea-physics/src/collision/blocks.rs).
 - Minosoft collision and fluid integration fixtures:
   [`CollisionIT.kt`](https://github.com/Bixilon/Minosoft/blob/18a17f311c8a0f52185a9065d096416b9bf2885d/src/integration-test/kotlin/de/bixilon/minosoft/data/physics/gravity/CollisionIT.kt).
+
+### Implementation status
+
+The collision/outline portion now uses a checked-in table generated from the
+pinned Azalea 26.2 source above: 913 deduplicated shapes classify all 32,366
+current states, older protocol states map by compatible name/properties with
+fail-closed ambiguity checks, and vanilla position-dependent XZ/XYZ offsets are
+applied in collision, targeting, and block-destroy particles. Runtime block-family
+heuristics have been removed. Exhaustive tests build all 12 embedded protocol
+tables, and focused integration tests exercise the real collision collector and
+interaction raycast.
+
+This roadmap item remains open for generated movement modifiers and the complete
+scripted walking/mining/placement matrix in the exit gate below. Occlusion and
+fluid state are already sourced from the separate generated per-version state
+tables in `pomme-client/src/world/block/data`.
 
 ### Exit gate
 

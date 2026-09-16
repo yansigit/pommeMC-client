@@ -1664,8 +1664,8 @@ pub fn raycast(
                 y: by,
                 z: bz,
             };
-            let outline = block_shape::outline_shape(state);
-            if let Some((hit_point, face)) = clip_shape(origin, reach_end, block_pos, outline) {
+            let outline = block_shape::outline_shape(state, block_pos);
+            if let Some((hit_point, face)) = clip_shape(origin, reach_end, block_pos, &outline) {
                 return Some(BlockHitResult {
                     block_pos,
                     face,
@@ -1841,6 +1841,33 @@ mod tests {
 
     use super::*;
     use crate::mob_effect::MobEffectInstance;
+
+    #[test]
+    fn raycast_uses_generated_outline_instead_of_a_full_cube() {
+        use azalea_core::position::ChunkPos;
+        use azalea_world::Chunk;
+
+        crate::world::block::init("26.2");
+        let mut chunks = ChunkStore::new(2);
+        let chunk_pos = ChunkPos::new(0, 0);
+        chunks.partial_storage.set(
+            &chunk_pos,
+            Some(Chunk::default()),
+            &mut chunks.chunk_storage,
+        );
+        let torch = crate::world::block::find_state("torch", &[]);
+        chunks.set_block_state(0, 0, 0, torch);
+
+        let hit = raycast(
+            dvec3(-1.0, 0.3, 0.5),
+            Vec3::new(1.0, 0.0, 0.0),
+            4.0,
+            &chunks,
+        )
+        .expect("torch outline hit");
+        assert_eq!(hit.block_pos, BlockPos::ZERO);
+        assert!((hit.hit_point.x - 0.375).abs() < 1.0e-9);
+    }
 
     #[test]
     fn respawn_resets_player_owned_interaction_transients() {
