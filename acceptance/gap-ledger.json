@@ -746,8 +746,11 @@
       "occurrence": 0,
       "wave": "4",
       "area": "gameplay-state-and-physics",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "UpdateAttributes now forwards the computed sneaking_speed value to LocalPlayer",
+        "Movement input uses the authoritative clamped sneaking-speed attribute instead of a constant"
+      ]
     },
     {
       "id": "marker-589a323b5d34",
@@ -757,8 +760,11 @@
       "occurrence": 0,
       "wave": "4",
       "area": "gameplay-state-and-physics",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "Water movement efficiency is packet-driven and halves while airborne",
+        "Water acceleration interpolates toward movement_speed and drag toward vanilla 0.54600006"
+      ]
     },
     {
       "id": "marker-6bc5804d125d",
@@ -857,8 +863,11 @@
       "occurrence": 0,
       "wave": "4",
       "area": "gameplay-state-and-physics",
-      "status": "open",
-      "evidence": []
+      "status": "closed",
+      "evidence": [
+        "Oxygen bonus is received through UpdateAttributes and clamped to vanilla's 0..1024 range",
+        "Air loss uses vanilla's random skip threshold 1 / (oxygen_bonus + 1) with deterministic boundary tests"
+      ]
     },
     {
       "id": "marker-aeaeb3ea74e1",

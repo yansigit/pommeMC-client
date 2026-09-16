@@ -19,6 +19,14 @@ const DROWN_DAMAGE_THRESHOLD: i32 = -20;
 const DROWN_DAMAGE: f32 = 2.0;
 const AIR_RECOVERY_RATE: i32 = 4;
 
+fn decreased_air_supply(current: i32, oxygen_bonus: f64, random_sample: f64) -> i32 {
+    if oxygen_bonus > 0.0 && random_sample >= 1.0 / (oxygen_bonus + 1.0) {
+        current
+    } else {
+        current - 1
+    }
+}
+
 pub const GAME_MODE_SURVIVAL: u8 = 0;
 pub const GAME_MODE_CREATIVE: u8 = 1;
 pub const GAME_MODE_ADVENTURE: u8 = 2;
@@ -78,6 +86,11 @@ pub struct LocalPlayer {
     pub may_build: bool,
     pub fly_speed: f32,
     pub walk_speed: f32,
+    /// Authoritative `movement_speed` attribute used by water acceleration.
+    pub movement_speed: f64,
+    pub sneaking_speed: f64,
+    pub water_movement_efficiency: f64,
+    pub oxygen_bonus: f64,
     pub jump_trigger_time: u32,
     pub no_jump_delay: u32,
     pub was_jump_pressed: bool,
@@ -150,6 +163,10 @@ impl LocalPlayer {
             may_build: true,
             fly_speed: 0.05,
             walk_speed: 0.1,
+            movement_speed: 0.1,
+            sneaking_speed: 0.3,
+            water_movement_efficiency: 0.0,
+            oxygen_bonus: 0.0,
             jump_trigger_time: 0,
             no_jump_delay: 0,
             was_jump_pressed: false,
@@ -238,6 +255,21 @@ impl LocalPlayer {
         self.walk_speed = walking_speed;
     }
 
+    /// Applies the authoritative attributes that affect local movement and air.
+    pub fn apply_attribute(&mut self, attribute: azalea_registry::builtin::Attribute, value: f64) {
+        use azalea_registry::builtin::Attribute;
+
+        match attribute {
+            Attribute::MovementSpeed => self.movement_speed = value.max(0.0),
+            Attribute::SneakingSpeed => self.sneaking_speed = value.clamp(0.0, 1.0),
+            Attribute::WaterMovementEfficiency => {
+                self.water_movement_efficiency = value.clamp(0.0, 1.0);
+            }
+            Attribute::OxygenBonus => self.oxygen_bonus = value.clamp(0.0, 1024.0),
+            _ => {}
+        }
+    }
+
     pub fn reset_death_time(&mut self) {
         self.death_time = 0;
     }
@@ -273,6 +305,10 @@ impl LocalPlayer {
         self.may_build = true;
         self.fly_speed = 0.05;
         self.walk_speed = 0.1;
+        self.movement_speed = 0.1;
+        self.sneaking_speed = 0.3;
+        self.water_movement_efficiency = 0.0;
+        self.oxygen_bonus = 0.0;
         self.jump_trigger_time = 0;
         self.no_jump_delay = 0;
         self.was_jump_pressed = false;
@@ -412,10 +448,10 @@ impl LocalPlayer {
         self.position + dvec3(0.0, self.eye_height, 0.0)
     }
 
-    // TODO: OXYGEN_BONUS attribute - chance to skip air loss per tick
     pub fn tick_air_supply(&mut self) {
         if self.eyes_in_water {
-            self.air_supply -= 1;
+            self.air_supply =
+                decreased_air_supply(self.air_supply, self.oxygen_bonus, fastrand::f64());
             if self.air_supply <= DROWN_DAMAGE_THRESHOLD {
                 self.air_supply = 0;
                 self.health = (self.health - DROWN_DAMAGE).max(0.0);
@@ -606,6 +642,30 @@ mod tests {
         assert!(player.instabuild);
         assert_eq!(player.fly_speed, 0.075);
         assert_eq!(player.walk_speed, 0.125);
+    }
+
+    #[test]
+    fn movement_and_air_attributes_apply_vanilla_bounds() {
+        use azalea_registry::builtin::Attribute;
+
+        let mut player = LocalPlayer::new();
+        player.apply_attribute(Attribute::MovementSpeed, 0.25);
+        player.apply_attribute(Attribute::SneakingSpeed, 1.5);
+        player.apply_attribute(Attribute::WaterMovementEfficiency, -0.5);
+        player.apply_attribute(Attribute::OxygenBonus, 2048.0);
+
+        assert_eq!(player.movement_speed, 0.25);
+        assert_eq!(player.sneaking_speed, 1.0);
+        assert_eq!(player.water_movement_efficiency, 0.0);
+        assert_eq!(player.oxygen_bonus, 1024.0);
+    }
+
+    #[test]
+    fn oxygen_bonus_uses_vanilla_skip_probability_boundary() {
+        assert_eq!(decreased_air_supply(300, 0.0, 1.0), 299);
+        assert_eq!(decreased_air_supply(300, 1.0, 0.49), 299);
+        assert_eq!(decreased_air_supply(300, 1.0, 0.5), 300);
+        assert_eq!(decreased_air_supply(300, 3.0, 0.25), 300);
     }
 
     #[test]

@@ -18,15 +18,12 @@ const BLOCK_FRICTION: f64 = 0.6;
 const GROUND_ACCEL_FACTOR: f64 = 0.216;
 const MOVEMENT_SPEED: f64 = 0.1;
 const SPRINT_SPEED_MODIFIER: f64 = 0.3;
-// TODO: SNEAKING_SPEED attribute - 0.3 is the default value
-const SNEAKING_SPEED: f64 = 0.3;
 const INPUT_DAMPING: f64 = 0.98;
 const AIR_ACCELERATION: f64 = 0.02;
-// TODO: WATER_MOVEMENT_EFFICIENCY attribute - scales drag toward 0.546 and
-// accel toward land speed
 const WATER_ACCELERATION: f64 = 0.02;
 const WATER_HORIZONTAL_DRAG: f64 = 0.8;
 const WATER_HORIZONTAL_DRAG_SPRINT: f64 = 0.9;
+const WATER_EFFICIENT_DRAG: f64 = 0.546_000_06_f32 as f64;
 const WATER_VERTICAL_DRAG: f64 = 0.8;
 const WATER_GRAVITY: f64 = 0.02;
 const STEP_HEIGHT: f64 = 0.6;
@@ -67,7 +64,7 @@ pub fn tick(
 
     // Vanilla `LocalPlayer.modifyInput`: an in-use item scales the movement
     // input by its `UseEffects` speed multiplier (0.2 for food).
-    let (forward, strafe) = movement_input(input, player.crouching);
+    let (forward, strafe) = movement_input(input, player.crouching, player.sneaking_speed);
     let (forward, strafe) = (
         forward * use_speed_multiplier,
         strafe * use_speed_multiplier,
@@ -329,7 +326,7 @@ fn ground_slipperiness(player: &LocalPlayer, chunk_store: &ChunkStore) -> f64 {
 /// follows the full look vector while strafe stays level, matching
 /// `SpectatorInput`'s camera-relative movement.
 fn tick_spectator(player: &mut LocalPlayer, input: &InputState) {
-    let (forward, strafe) = movement_input(input, false);
+    let (forward, strafe) = movement_input(input, false, 1.0);
     let vertical = if input.performing_action(input::Action::Jump) {
         1.0
     } else if input.performing_action(input::Action::Sneak) {
@@ -373,10 +370,12 @@ fn tick_water(
         player.velocity.y -= 0.04;
     }
 
+    let (acceleration, h_drag) = water_motion_parameters(player);
+
     let (sin_y_rot, cos_y_rot) = look_sin_cos(player);
     let (move_x, move_z) = world_movement(forward, strafe, sin_y_rot, cos_y_rot);
-    player.velocity.x += move_x * WATER_ACCELERATION;
-    player.velocity.z += move_z * WATER_ACCELERATION;
+    player.velocity.x += move_x * acceleration;
+    player.velocity.z += move_z * acceleration;
 
     if player.swimming {
         let sin_x = player.look_dir.x_rot_rad().sin() as f64;
@@ -397,11 +396,6 @@ fn tick_water(
         height,
     );
 
-    let h_drag = if player.sprinting {
-        WATER_HORIZONTAL_DRAG_SPRINT
-    } else {
-        WATER_HORIZONTAL_DRAG
-    };
     player.velocity.x *= h_drag;
     player.velocity.z *= h_drag;
 
@@ -414,6 +408,22 @@ fn tick_water(
     player.velocity.y *= WATER_VERTICAL_DRAG;
 
     overwrite_flying_vy(player, saved_vy);
+}
+
+fn water_motion_parameters(player: &LocalPlayer) -> (f64, f64) {
+    let mut efficiency = player.water_movement_efficiency;
+    if !player.on_ground {
+        efficiency *= 0.5;
+    }
+    let acceleration =
+        WATER_ACCELERATION + (player.movement_speed - WATER_ACCELERATION) * efficiency;
+    let base_drag = if player.sprinting {
+        WATER_HORIZONTAL_DRAG_SPRINT
+    } else {
+        WATER_HORIZONTAL_DRAG
+    };
+    let drag = base_drag + (WATER_EFFICIENT_DRAG - base_drag) * efficiency;
+    (acceleration, drag)
 }
 
 // Vanilla Player.travel: while flying the travel step runs normally (gravity
@@ -671,7 +681,7 @@ fn is_minor_horizontal_collision(
     angle < MINOR_COLLISION_ANGLE
 }
 
-fn movement_input(input: &InputState, crouching: bool) -> (f64, f64) {
+fn movement_input(input: &InputState, crouching: bool, sneaking_speed: f64) -> (f64, f64) {
     let mut forward = 0.0f64;
     let mut strafe = 0.0f64;
 
@@ -697,8 +707,8 @@ fn movement_input(input: &InputState, crouching: bool) -> (f64, f64) {
     strafe *= INPUT_DAMPING;
 
     if crouching {
-        forward *= SNEAKING_SPEED;
-        strafe *= SNEAKING_SPEED;
+        forward *= sneaking_speed;
+        strafe *= sneaking_speed;
     }
 
     square_movement(forward, strafe)
@@ -880,5 +890,22 @@ mod tests {
             STEP_HEIGHT
         ));
         assert!(!is_above_ground(&chunks, &bb, false, 0.0, STEP_HEIGHT));
+    }
+
+    #[test]
+    fn water_efficiency_interpolates_acceleration_and_drag() {
+        let mut player = LocalPlayer::new();
+        player.movement_speed = 0.1;
+        player.water_movement_efficiency = 1.0;
+        player.on_ground = true;
+
+        let (ground_accel, ground_drag) = water_motion_parameters(&player);
+        assert!((ground_accel - 0.1).abs() < f64::EPSILON);
+        assert!((ground_drag - WATER_EFFICIENT_DRAG).abs() < f64::EPSILON);
+
+        player.on_ground = false;
+        let (air_accel, air_drag) = water_motion_parameters(&player);
+        assert!((air_accel - 0.06).abs() < 1.0e-12);
+        assert!((air_drag - (WATER_HORIZONTAL_DRAG + WATER_EFFICIENT_DRAG) * 0.5).abs() < 1.0e-12);
     }
 }

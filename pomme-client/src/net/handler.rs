@@ -304,6 +304,14 @@ pub fn handle_game_packet(
                         entity_id: p.entity_id.0,
                         max_health: value.clamp(1.0, 1024.0) as f32,
                     },
+                    Attribute::MovementSpeed
+                    | Attribute::SneakingSpeed
+                    | Attribute::WaterMovementEfficiency
+                    | Attribute::OxygenBonus => NetworkEvent::PlayerAttributeChanged {
+                        entity_id: p.entity_id.0,
+                        attribute: snapshot.attribute,
+                        value,
+                    },
                     _ => continue,
                 };
                 let _ = event_tx.try_send(event);
@@ -1604,6 +1612,83 @@ mod tests {
                 walking_speed,
             } if flying_speed == 0.075 && walking_speed == 0.125
         ));
+    }
+
+    #[test]
+    fn player_movement_attributes_cross_the_packet_boundary() {
+        use azalea_core::attribute_modifier_operation::AttributeModifierOperation;
+        use azalea_core::entity_id::MinecraftEntityId;
+        use azalea_inventory::components::AttributeModifier;
+        use azalea_protocol::packets::game::c_update_attributes::{
+            AttributeSnapshot, ClientboundUpdateAttributes,
+        };
+        use azalea_registry::builtin::Attribute;
+
+        let modifier = |id: &str, amount, operation| AttributeModifier {
+            id: Identifier::new(id),
+            amount,
+            operation,
+        };
+        let packet = ClientboundUpdateAttributes {
+            entity_id: MinecraftEntityId(42),
+            values: vec![
+                AttributeSnapshot {
+                    attribute: Attribute::MovementSpeed,
+                    base: 0.1,
+                    modifiers: vec![modifier(
+                        "minecraft:test_move",
+                        0.05,
+                        AttributeModifierOperation::AddValue,
+                    )],
+                },
+                AttributeSnapshot {
+                    attribute: Attribute::SneakingSpeed,
+                    base: 0.3,
+                    modifiers: vec![modifier(
+                        "minecraft:test_sneak",
+                        0.5,
+                        AttributeModifierOperation::AddMultipliedTotal,
+                    )],
+                },
+                AttributeSnapshot {
+                    attribute: Attribute::WaterMovementEfficiency,
+                    base: 1.0,
+                    modifiers: vec![],
+                },
+                AttributeSnapshot {
+                    attribute: Attribute::OxygenBonus,
+                    base: 2.0,
+                    modifiers: vec![],
+                },
+            ],
+        };
+
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let sender = PacketSender::new(out_tx);
+        let (event_tx, event_rx) = crossbeam_channel::bounded(4);
+        handle_game_packet(
+            &ClientboundGamePacket::UpdateAttributes(packet),
+            &sender,
+            &event_tx,
+            &RegistryHolder::default(),
+            &Arc::new(Mutex::new(None)),
+        );
+
+        for (attribute, expected) in [
+            (Attribute::MovementSpeed, 0.15),
+            (Attribute::SneakingSpeed, 0.45),
+            (Attribute::WaterMovementEfficiency, 1.0),
+            (Attribute::OxygenBonus, 2.0),
+        ] {
+            assert!(matches!(
+                event_rx.recv().unwrap(),
+                NetworkEvent::PlayerAttributeChanged {
+                    entity_id: 42,
+                    attribute: actual,
+                    value,
+                } if actual == attribute && (value - expected).abs() < 1.0e-12
+            ));
+        }
     }
 
     #[test]

@@ -1362,6 +1362,15 @@ impl AppCore {
                         walking_speed,
                     );
                 }
+                NetworkEvent::PlayerAttributeChanged {
+                    entity_id,
+                    attribute,
+                    value,
+                } => {
+                    if entity_id == game.player.entity_id {
+                        game.player.apply_attribute(attribute, value);
+                    }
+                }
                 NetworkEvent::ServerViewDistance { distance } => {
                     tracing::info!("Server view distance: {distance}");
                     if let Some(d) =

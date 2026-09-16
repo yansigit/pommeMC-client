@@ -15,7 +15,7 @@ use azalea_block::BlockState;
 use azalea_core::heightmap_kind::HeightmapKind;
 use azalea_core::position::{BlockPos, ChunkPos};
 use azalea_inventory::ItemStack;
-use azalea_registry::builtin::{BlockEntityKind, EntityKind};
+use azalea_registry::builtin::{Attribute, BlockEntityKind, EntityKind};
 use glam::DVec3;
 use simdnbt::owned::NbtCompound;
 
@@ -304,6 +304,11 @@ pub enum NetworkEvent {
         instabuild: bool,
         flying_speed: f32,
         walking_speed: f32,
+    },
+    PlayerAttributeChanged {
+        entity_id: i32,
+        attribute: Attribute,
+        value: f64,
     },
     ServerViewDistance {
         distance: u32,
